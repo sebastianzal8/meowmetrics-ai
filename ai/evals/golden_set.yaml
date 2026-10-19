@@ -1,0 +1,93 @@
+# MeowMetrics AI golden evaluation set
+#
+# Two sections:
+#   sql:  natural-language analytical questions over BI_TABLEAU_VIEWS.
+#         `expected_sql` is scored two ways: exact shape match (rows+columns)
+#         AND normalized AST equality via sqlglot.
+#   docs: system/architecture questions answered via the doc RAG.
+#         `expected_doc_keywords` must appear in the retrieved context chunks.
+#
+# Uses the deterministic mock Gold layer (`ai/data_access/mock_data.py`), so the
+# whole eval runs with ZERO network access — CI/evaluation = pure local.
+
+sql_questions:
+  - id: s1
+    question: "What is the average daily sleep duration for each cat, in minutes?"
+    expected_sql: "SELECT cat_name, AVG(estimated_sleep_minutes) AS avg_sleep FROM BI_TABLEAU_VIEWS GROUP BY cat_name"
+
+  - id: s2
+    question: "Which cat had the highest single-day health score, and on which date?"
+    expected_sql: "SELECT cat_name, reading_date, daily_feline_health_score FROM BI_TABLEAU_VIEWS ORDER BY daily_feline_health_score DESC LIMIT 1"
+
+  - id: s3
+    question: "How many days did each cat spend in the 'Needs Attention' status?"
+    expected_sql: "SELECT cat_name, COUNT(*) AS days_needs_attention FROM BI_TABLEAU_VIEWS WHERE health_status_category = 'Needs Attention' GROUP BY cat_name"
+
+  - id: s4
+    question: "What is the average heart rate per breed, over all days?"
+    expected_sql: "SELECT breed, AVG(avg_heart_rate_bpm) AS avg_hr FROM BI_TABLEAU_VIEWS GROUP BY breed"
+
+  - id: s5
+    question: "Show Luna's daily steps for the last 5 days, most recent first."
+    expected_sql: "SELECT reading_date, total_daily_steps FROM BI_TABLEAU_VIEWS WHERE cat_name = 'Luna' ORDER BY reading_date DESC LIMIT 5"
+
+  - id: s6
+    question: "Which overweight cats average more than 2000 steps a day?"
+    expected_sql: "SELECT cat_name, AVG(total_daily_steps) AS avg_steps FROM BI_TABLEAU_VIEWS WHERE weight_category = 'overweight' GROUP BY cat_name HAVING AVG(total_daily_steps) > 2000"
+
+  - id: s7
+    question: "What is the correlation-style trend between sleep and health score per cat? Show avg sleep and avg score per cat."
+    expected_sql: "SELECT cat_name, AVG(estimated_sleep_minutes) AS avg_sleep_min, AVG(daily_feline_health_score) AS avg_score FROM BI_TABLEAU_VIEWS GROUP BY cat_name"
+
+  - id: s8
+    question: "How many total daily steps did Garfield log, summed over the whole dataset?"
+    expected_sql: "SELECT SUM(total_daily_steps) AS total_steps FROM BI_TABLEAU_VIEWS WHERE cat_name = 'Garfield'"
+
+  - id: s9
+    question: "Which cats are obese or overweight?"
+    expected_sql: "SELECT DISTINCT cat_name, breed, weight_category FROM BI_TABLEAU_VIEWS WHERE weight_category IN ('obese','overweight')"
+
+  - id: s10
+    question: "On which date was the lowest average purr frequency recorded for Milo?"
+    expected_sql: "SELECT reading_date, avg_purr_frequency_hz FROM BI_TABLEAU_VIEWS WHERE cat_name = 'Milo' ORDER BY avg_purr_frequency_hz LIMIT 1"
+
+  - id: s11
+    question: "For each cat, what percentage of the day is spent active, averaged over all days?"
+    expected_sql: "SELECT cat_name, AVG(active_percentage_of_day) AS avg_active_pct FROM BI_TABLEAU_VIEWS GROUP BY cat_name"
+
+  - id: s12
+    question: "List the 3 days with the lowest health score for cats of any weight category."
+    expected_sql: "SELECT cat_name, reading_date, daily_feline_health_score FROM BI_TABLEAU_VIEWS ORDER BY daily_feline_health_score LIMIT 3"
+
+  - id: s13
+    question: "How many readings do we have for each health status category?"
+    expected_sql: "SELECT health_status_category, COUNT(*) AS n_days FROM BI_TABLEAU_VIEWS GROUP BY health_status_category"
+
+  - id: s14
+    question: "Which male cats average more than 135 heartbeats per minute?"
+    expected_sql: "SELECT cat_name, AVG(avg_heart_rate_bpm) AS avg_hr FROM BI_TABLEAU_VIEWS WHERE gender = 'male' GROUP BY cat_name HAVING AVG(avg_heart_rate_bpm) > 135"
+
+  - id: s15
+    question: "What's the healthiest day overall (max score) for any cat?"
+    expected_sql: "SELECT cat_name, reading_date, daily_feline_health_score FROM BI_TABLEAU_VIEWS ORDER BY daily_feline_health_score DESC LIMIT 1"
+
+doc_questions:
+  - id: d1
+    question: "How does the feline health score work?"
+    expected_doc_keywords: ["daily_cat_health.sql", "computed_score", "health_score"]
+
+  - id: d2
+    question: "How are duplicate collar readings handled in the pipeline?"
+    expected_doc_keywords: ["deduplicat", "row_number", "ingested_at"]
+
+  - id: d3
+    question: "What heart rate values are considered sensor errors?"
+    expected_doc_keywords: ["heart_rate_bpm", "sensor error", "-1"]
+
+  - id: d4
+    question: "How does telemetry get loaded from the Databricks Silver layer into Snowflake?"
+    expected_doc_keywords: ["COPY INTO", "MEOW_EXT_STAGE_TELEMETRY", "PARQUET"]
+
+  - id: d5
+    question: "Which parts of the pipeline does the Airflow DAG orchestrate, in what order?"
+    expected_doc_keywords: ["databricks_processing", "snowflake_loading", "dbt_modeling"]

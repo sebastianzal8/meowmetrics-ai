@@ -1,10 +1,14 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
 import os
+import sys
+from pathlib import Path
+
+# Allow importing the ai package (shared mock data + copilot) when running
+# `streamlit run app.py` from inside dashboard/
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Set page config with a cat theme
 st.set_page_config(
@@ -50,87 +54,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # DBTITLE 1,Database Connection & Data Loading
+# The mock Gold-layer generator was moved to `ai/data_access/mock_data.py` so
+# the dashboard, the AI copilot and the eval harness all share one dataset.
+from ai.data_access.mock_data import build_mock_gold_data
+
 @st.cache_data
 def get_mock_data():
     """Generates mock Gold-layer views for local execution."""
-    cats = [
-        {"cat_id": "CAT001", "cat_name": "Luna", "breed": "Siamese", "gender": "female", "age_years": 3, "human_equivalent_age": 28, "weight_lbs": 8.4, "weight_category": "healthy weight"},
-        {"cat_id": "CAT002", "cat_name": "Oliver", "breed": "Maine Coon", "gender": "male", "age_years": 5, "human_equivalent_age": 36, "weight_lbs": 16.2, "weight_category": "healthy weight"},
-        {"cat_id": "CAT003", "cat_name": "Milo", "breed": "Persian", "gender": "male", "age_years": 8, "human_equivalent_age": 48, "weight_lbs": 12.8, "weight_category": "overweight"},
-        {"cat_id": "CAT004", "cat_name": "Bella", "breed": "Ragdoll", "gender": "female", "age_years": 1, "human_equivalent_age": 15, "weight_lbs": 9.1, "weight_category": "healthy weight"},
-        {"cat_id": "CAT005", "cat_name": "Garfield", "breed": "Tabby", "gender": "male", "age_years": 12, "human_equivalent_age": 64, "weight_lbs": 17.5, "weight_category": "obese"}
-    ]
-    df_cats = pd.DataFrame(cats)
-    
-    # Generate 30 days of telemetry
-    start_date = datetime.now() - timedelta(days=30)
-    records = []
-    
-    for cat in cats:
-        np.random.seed(hash(cat["cat_id"]) % 1000)
-        base_steps = 4000 if cat["cat_id"] in ["CAT001", "CAT004"] else 1500 # Siamese/Ragdoll active, Persian lazy
-        base_sleep = 750 if cat["cat_id"] in ["CAT001", "CAT004"] else 950 # sleeping minutes
-        base_hr = 135 if cat["cat_id"] != "CAT005" else 155 # higher heart rate for older/obese Garfield
-        
-        for d in range(30):
-            current_day = start_date + timedelta(days=d)
-            steps = int(np.random.normal(base_steps, 500))
-            sleep_min = int(np.random.normal(base_sleep, 60))
-            active_min = int(np.random.normal(1440 - sleep_min - 200, 30))
-            lazy_min = 1440 - sleep_min - active_min
-            
-            steps = max(0, steps)
-            sleep_min = min(1440, max(0, sleep_min))
-            active_min = min(1440 - sleep_min, max(0, active_min))
-            lazy_min = 1440 - sleep_min - active_min
-            
-            hr = int(np.random.normal(base_hr, 10))
-            purr = round(max(0.0, np.random.normal(25.0, 5.0)), 2)
-            
-            # Compute mock Health Score using the dbt logic
-            score = 100
-            if hr > 150 or hr < 110:
-                score -= 15
-            if sleep_min < 480 or sleep_min > 1100:
-                score -= 15
-            if steps < 1000:
-                score -= 15
-            
-            score = max(0, min(100, score))
-            
-            if score >= 85:
-                status = "Excellent"
-            elif score >= 70:
-                status = "Good"
-            elif score >= 50:
-                status = "Needs Attention"
-            else:
-                status = "Critical Care"
-                
-            records.append({
-                "daily_summary_id": f"{cat['cat_id']}_{current_day.strftime('%Y%m%d')}",
-                "cat_id": cat["cat_id"],
-                "cat_name": cat["cat_name"],
-                "breed": cat["breed"],
-                "gender": cat["gender"],
-                "age_years": cat["age_years"],
-                "human_equivalent_age": cat["human_equivalent_age"],
-                "weight_lbs": cat["weight_lbs"],
-                "weight_category": cat["weight_category"],
-                "reading_date": current_day.date(),
-                "avg_heart_rate_bpm": hr,
-                "total_daily_steps": steps,
-                "avg_purr_frequency_hz": purr,
-                "estimated_sleep_minutes": sleep_min,
-                "estimated_active_minutes": active_min,
-                "estimated_lazy_minutes": lazy_min,
-                "daily_feline_health_score": score,
-                "health_status_category": status,
-                "sleep_percentage_of_day": round((sleep_min / 1440) * 100, 1),
-                "active_percentage_of_day": round((active_min / 1440) * 100, 1)
-            })
-            
-    return pd.DataFrame(records)
+    return build_mock_gold_data()
 
 def load_data():
     """Loads dataset from Snowflake if credentials exist, else returns mock data."""
@@ -165,7 +96,8 @@ def load_data():
 df = load_data()
 
 # DBTITLE 2,Sidebar Navigation & Selectors
-st.sidebar.image("D720F0F5-F61E-4E86-8191-6EED544CC472.jpg", use_container_width=True)
+_LOGO = str(Path(__file__).resolve().parent / "D720F0F5-F61E-4E86-8191-6EED544CC472.jpg")
+st.sidebar.image(_LOGO, use_container_width=True)
 st.sidebar.title("🐱 MeowMetrics")
 st.sidebar.caption("Cat Telemetry & Pipeline Analytics Dashboard")
 
@@ -336,3 +268,13 @@ if not filtered_df.empty:
         )
 else:
     st.error("No cat behavior records found matching the filters.")
+
+# DBTITLE 6,🆕 AI Layer: Agentic RAG Copilot + LLM Daily Digests
+st.markdown("---")
+from ai.ui.copilot import render_copilot
+from ai.ui.digest import render_digest_section
+
+render_copilot()
+st.markdown("---")
+render_digest_section()
+
