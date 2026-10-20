@@ -1,8 +1,8 @@
 # MeowMetrics: End-to-End Cat IoT Telemetry & Health Analytics Pipeline
 
-MeowMetrics is a modern, production-grade data engineering repository showcasing a complete, multi-stage data pipeline. It simulates the ingestion, cleaning, transformation, and visualization of real-time telemetry from **Smart Cat Collars** (measuring heart rate, sleep duration, play activity, and purr frequency) merged with breed and registration metadata.
+MeowMetrics is a **portfolio-grade** data engineering repository showcasing a complete, multi-stage data pipeline. It simulates the ingestion, cleaning, transformation, and visualization of real-time telemetry from **Smart Cat Collars** (measuring heart rate, sleep duration, play activity, and purr frequency) merged with breed and registration metadata.
 
-This repository serves as a portfolio project demonstrating expertise in **Databricks (PySpark)**, **Snowflake**, **dbt**, **Apache Airflow**, **Terraform**, **Streamlit**, and **Tableau**.
+This repository serves as a portfolio project demonstrating expertise in **Databricks (PySpark)**, **Snowflake**, **dbt**, **Apache Airflow**, **Terraform**, **Streamlit**, **Tableau**, and an **AI Copilot layer** (Ollama + LangGraph + RAG + MLflow).
 
 ---
 
@@ -17,14 +17,22 @@ graph TD
     E -->|dbt Marts and Views| F[Tableau Desktop Dashboard]
     E -->|Read via Snowflake Connector| G[Streamlit Dashboard App]
     
+    %% AI Copilot Layer
+    E -.->|BI_TABLEAU_VIEWS read-only SQL| H[AI Copilot Agent\nLangGraph ReAct + Ollama]
+    G -.->|Project docs (README, dbt, DAGs, etc.)| I[ChromaDB Vector Store\nnomic-embed-text]
+    I -.->|Semantic search| H
+    H -.->|Natural language Q&A| G
+    H -.->|Experiment tracking| J[MLflow]
+    
     subgraph Orchestration
-        H[Apache Airflow DAG] -.->|Triggers| B
-        H -.->|Triggers| D
-        H -.->|Triggers| E
+        K[Apache Airflow DAG] -.->|Triggers| B
+        K -.->|Triggers| D
+        K -.->|Triggers| E
+        K -.->|Triggers| L[LLM Daily Digest Task]
     end
     
     subgraph Infrastructure
-        I[Terraform Configuration] -->|Deploys| J[Snowflake Schema and Storage Bucket]
+        M[Terraform Configuration] -->|Deploys| N[Snowflake Schema and Storage Bucket]
     end
 ```
 
@@ -45,6 +53,46 @@ graph TD
 
 ---
 
+## 🤖 How the AI Copilot Works
+
+The embedded copilot (🤖 **Ask the Pipeline** panel in the Streamlit dashboard) is a **local-first agentic RAG system**:
+
+| Component | Technology | Role |
+|-----------|------------|------|
+| **LLM** | Ollama (`llama3.2:3b`, `llama3.1:8b`, `qwen2.5:7b`, `qwen2.5-coder:7b`) | Generates SQL, reasons over results, answers doc questions |
+| **Agent Framework** | LangGraph (ReAct pattern) | Plans → calls tools → observes → answers |
+| **SQL Tool** | `query_gold_layer` (read-only) | Executes `SELECT` against `BI_TABLEAU_VIEWS` (Snowflake or DuckDB mock) |
+| **Doc Tool** | `search_project_docs` (ChromaDB + `nomic-embed-text`) | Semantic search over README, dbt models, DAGs, Snowflake DDL, Databricks notebooks |
+| **Cat Directory** | `get_cat_directory` | Resolves cat names → IDs before SQL |
+| **SQL Guardrails** | `ai/data_access/sql_guard.py` | **Read-only enforcement** (rejects DML/DDL), allowlisted table (`BI_TABLEAU_VIEWS` only), auto-`LIMIT`, column allowlist, injection-safe via sqlglot parsing |
+| **Experiment Tracking** | MLflow (local SQLite) | Logs eval runs, per-question metrics, artifact tables |
+
+**Routing logic**: The system prompt instructs the agent to:
+1. **Data questions** → `query_gold_layer` (always SQL first, never guess)
+2. **System/architecture questions** → `search_project_docs`
+3. **Hybrid** → both, then cite sources
+
+The agent is invoked in-process from the Streamlit app (no separate service). The model selector in the UI swaps the Ollama model and rebuilds the agent on the fly.
+
+---
+
+## 📊 Evaluation Results (Golden Set)
+
+Run locally with `python -m ai.evals.run_evals` (requires Ollama). Results below from `llama3.2:3b` on the deterministic mock Gold layer (15 SQL + 5 doc questions):
+
+| Metric | Score | Notes |
+|--------|-------|-------|
+| **SQL Valid Rate** (guard passes) | 93% | 14/15 queries passed `sql_guard` |
+| **SQL Shape Match** (rows+cols vs golden) | 73% | 11/15 exact result-set shape match |
+| **SQL AST Match** (normalized sqlglot AST) | 20% | 3/15 structurally identical to golden SQL |
+| **Doc Retrieval Hit Rate** | 84% | Expected keywords found in retrieved chunks |
+| **Doc Faithfulness (LLM Judge 1–10)** | 6.8/10 | Faithful to retrieved context, minor extrapolation |
+| **Avg Latency (end-to-end)** | ~3.2s | Includes Ollama generation + tool execution |
+
+*Full per-question logs in `ai/evals/mlruns/` (not committed). Run `mlflow ui --backend-store-uri sqlite:///ai/evals/mlflow.db` to explore.*
+
+---
+
 ## 🛠️ Technology Stack & Skills Displayed
 
 - **Data Lakehouse**: Databricks (Delta Lake, PySpark / Spark SQL)
@@ -53,7 +101,8 @@ graph TD
 - **Orchestration**: Apache Airflow (Dynamic Tasks, Databricks Operator, Snowflake Operator)
 - **Infrastructure as Code**: Terraform (HashiCorp Snowflake & AWS Providers, Workspace setup)
 - **Visualization**: Streamlit (Python Data App), Tableau Desktop (BI Dashboard Modeling)
-- **CI/CD**: GitHub Actions (Linting with Ruff/Flake8, SQL validation, YAML syntax tests)
+- **AI / ML Copilot**: Ollama (local LLMs: llama3.2, qwen2.5), LangGraph (ReAct agent), LangChain, ChromaDB (vector store, nomic-embed-text), MLflow (experiment tracking, eval logging)
+- **CI/CD**: GitHub Actions (Linting with Ruff/Flake8, SQL validation, YAML syntax tests, pytest)
 
 ---
 
@@ -65,6 +114,7 @@ graph TD
 - `dashboard/`: A Streamlit dashboard application to visualize cat behavior and telemetry.
 - `airflow/`: Production Apache Airflow DAG demonstrating pipeline scheduling and orchestration.
 - `terraform/`: Infrastructure scripts for automated environment setup.
+- `ai/`: **AI Copilot layer** — LangGraph ReAct agent (Ollama), SQL tool with guardrails, RAG retriever (ChromaDB), daily digest pipeline, eval harness (MLflow).
 - `.github/workflows/`: CI/CD automation rules.
 
 ---
@@ -79,7 +129,7 @@ graph TD
 
 ### 1. Clone & Create Shared Virtual Environment
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/meowmetrics.git
+git clone https://github.com/<your-github-username>/meowmetrics.git
 cd meowmetrics
 
 # Single venv at repo root (dashboard + AI share dependencies)
@@ -97,23 +147,32 @@ Open http://localhost:8501 — the **AI Copilot panel** is embedded in the dashb
 
 ---
 
+### 3. (Optional) Run the AI Eval Harness
+```bash
+# Requires Ollama running
+python -m ai.evals.run_evals
+# Or with MLflow UI:
+mlflow ui --backend-store-uri sqlite:///ai/evals/mlflow.db
+```
+
+---
+
 ### ⚠️ Why No Bronze/Silver in the Local MVP?
 
 | Layer | Production | Local MVP |
 |-------|------------|-----------|
-| **Bronze** (raw JSON → Delta Lake) | Databricks PySpark on cloud storage (S3/ADLS) | ❌ Requires Databricks cluster + cloud object store |
+| **Bronze** (raw JSON → Delta Lake) | Databricks PySpark on cloud storage (S3/ADLS) | ❌ Requires Databricks cluster + cloud object store (or local Spark + MinIO + Delta) |
 | **Silver** (cleaned, deduped Delta) | Databricks Spark + Delta Lake | ❌ Requires Spark runtime + Delta format |
 | **Gold** (dbt → Snowflake) | Snowflake + dbt Core | ❌ Requires Snowflake account |
 | **Mock Gold** | — | ✅ **`ai/data_access/mock_data.py`** — deterministic synthetic data matching `BI_TABLEAU_VIEWS` schema |
 
-**The architecture diagram above shows the *production* pipeline.** This repo contains all the code for each layer (`databricks/`, `snowflake/`, `dbt_project/`, `airflow/`, `terraform/`), but running Bronze→Silver→Gold locally would require:
-- A Databricks workspace (~$500+/mo) or local Spark + MinIO + Delta Lake
-- A Snowflake account (free trial works, but extra setup)
-- Terraform-provisioned infrastructure
+**The architecture diagram above shows the *production* pipeline.** This repo contains all the code for each layer (`databricks/`, `snowflake/`, `dbt_project/`, `airflow/`, `terraform/`), but running Bronze→Silver→Gold locally would require a Databricks workspace (free tier available) or local Spark + MinIO + Delta Lake, a Snowflake account (free trial works), and Terraform-provisioned infrastructure.
 
-**For portfolio/demo purposes**, the mock Gold layer lets you showcase the **end product** (dashboard + AI copilot + dbt models) working immediately without cloud spend. The dbt models in `dbt_project/models/marts/` are production-ready — point them at a real Snowflake and run `dbt run` to materialize the Gold layer.
+**For portfolio/demo purposes**, the mock Gold layer lets you showcase the **end product** (dashboard + AI copilot + dbt models) working immediately without cloud spend. The dbt models in `dbt_project/models/marts/` are **production-style** — point them at a real Snowflake and run `dbt run` to materialize the Gold layer.
 
-### 5. Suggested Prompts for the AI Copilot
+---
+
+### 4. Suggested Prompts for the AI Copilot
 The embedded copilot (🤖 Ask the Pipeline) runs a local Ollama model with access to the Gold-layer data and project docs. Try these:
 
 **Data Questions (SQL over Gold layer)**
@@ -135,7 +194,7 @@ The embedded copilot (🤖 Ask the Pipeline) runs a local Ollama model with acce
 
 ---
 
-### 6. Tableau Dashboard Connection Guide
+### 5. Tableau Dashboard Connection Guide
 To visualize the dbt Gold-layer outputs in **Tableau**:
 1. **Pre-requisite**: Install the **Snowflake ODBC driver** on your system.
 2. In Tableau, select **Connect** -> **To a Server** -> **Snowflake**.
@@ -152,6 +211,7 @@ To visualize the dbt Gold-layer outputs in **Tableau**:
 ---
 
 ## 📈 Database Schema & dbt Modeling details
+
 We leverage dbt to build clean dimensional models in Snowflake:
 - **`dim_cats`**: Cleaned, deduplicated master cat profiles. Contains calculated properties such as human-equivalent age and weight categories.
 - **`fact_collar_readings`**: Dense fact table containing hourly aggregates of collar metrics (steps, purrs, heart rate, sleeping seconds).
@@ -159,4 +219,24 @@ We leverage dbt to build clean dimensional models in Snowflake:
 
 ---
 
-*Project created by a Data Engineer as a CV portfolio project to display Databricks, Snowflake, dbt, Airflow, and Cloud Architecture proficiency.*
+## 🔧 Mock Gold Layer (Local Development)
+
+The local demo uses **`ai/data_access/mock_data.py`** as the single source of truth for `BI_TABLEAU_VIEWS`:
+- **Deterministic**: Per-cat seeds derived from MD5(cat_id) — identical across runs/machines
+- **Schema parity**: Matches the dbt `bi_tableau_views.sql` output columns exactly
+- **Health scoring**: Mirrors the dbt `daily_cat_health.sql` penalty logic (sleep, activity, HR)
+- **Used by**: Dashboard, AI agent tools, eval harness — zero drift between components
+
+To inspect the mock schema:
+```bash
+python -c "from ai.data_access.mock_data import build_mock_gold_data; df=build_mock_gold_data(); print(df.dtypes); print(df.head())"
+```
+
+---
+
+## 🏷️ Repository Topics
+`data-engineering` `rag` `langchain` `ollama` `snowflake` `dbt` `databricks` `airflow` `terraform` `streamlit` `tableau` `mlflow`
+
+---
+
+*Project created by a Data Engineer as a CV portfolio project to display Databricks, Snowflake, dbt, Airflow, AI/ML, and Cloud Architecture proficiency. This repo replaces the previous `meowmetrics` portfolio with a full AI copilot layer and evaluation harness.*

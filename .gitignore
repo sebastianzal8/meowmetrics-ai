@@ -1,63 +1,58 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Pyenv / Virtual Environment
-.env
-.venv/
-env/
 venv/
-ENV/
-env.bak/
-venv.bak/
+env/
+.venv/
 
-# Streamlit
-.streamlit/
+# Virtual environments
+venv/
+dashboard/venv/
+ai/venv/
 
-# dbt
-dbt_packages/
-logs/
-target/
-
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.backup
-*.tfvars
-*.tfvars.json
-
-# IDEs
-.idea/
+# IDE
 .vscode/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+.idea/
+*.swp
+*.swo
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
+
+# MLflow & eval artifacts
+mlruns/
+ai/evals/mlruns/
+ai/evals/mlflow.db
+
+# Vector store cache (ChromaDB)
+ai/index_cache/
+
+# Data
+*.parquet
+*.csv
+*.db
+*.duckdb
+meowmetrics.duckdb
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Temporary files
+*.tmp
+*.temp
+debug_agent.py
+test_ollama.py

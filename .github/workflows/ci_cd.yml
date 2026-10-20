@@ -28,25 +28,32 @@ jobs:
     - name: Install Linting & Testing packages
       run: |
         python -m pip install --upgrade pip
-        pip install ruff sqlfluff dbt-snowflake
-        # Install Streamlit dashboard requirements
+        pip install ruff sqlfluff dbt-snowflake pytest pytest-cov
+        # Install all project requirements (dashboard + AI)
         if [ -f dashboard/requirements.txt ]; then pip install -r dashboard/requirements.txt; fi
+        if [ -f ai/requirements.txt ]; then pip install -r ai/requirements.txt; fi
 
     # 4. PYTHON LINTING (Ruff)
     # Check Python code conventions (airflow DAGs, databricks notebooks, streamlit app)
     - name: Run Python Lint checks (Ruff)
       run: |
         # Check syntax, formatting, and standard rules
-        ruff check dashboard/ airflow/ databricks/ --ignore E501
+        ruff check dashboard/ airflow/ databricks/ ai/ tests/ --ignore E501
 
-    # 5. SQL LINTING (sqlfluff)
+    # 5. PYTHON TESTS (pytest)
+    # Run unit tests for SQL guardrails and retriever (no Ollama/MLflow needed)
+    - name: Run Unit Tests (pytest)
+      run: |
+        pytest tests/ -v --tb=short
+
+    # 6. SQL LINTING (sqlfluff)
     # Validates Snowflake script schemas and SQL structure conventions
     - name: Run SQL Lint checks (sqlfluff)
       run: |
         # Run sqlfluff on Snowflake setup scripts using snowflake dialect
         sqlfluff lint snowflake/ --dialect snowflake
 
-    # 6. DBT PROJECT SYNTAX VERIFICATION
+    # 7. DBT PROJECT SYNTAX VERIFICATION
     # Validates that dbt configurations, sources, and schema links are correct
     - name: Validate dbt Project Config (dbt parse)
       run: |
