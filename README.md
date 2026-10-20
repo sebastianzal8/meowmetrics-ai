@@ -176,11 +176,11 @@ The embedded copilot (🤖 Ask the Pipeline) runs a local Ollama model with acce
 
 **Data Questions (SQL over Gold layer)**
 - "Which cats had heart-rate anomalies yesterday?"
-- "Show me the health score for Whiskers last week"
+- "Show me the health score for Gaia last week"
 - "List all cats with their breed and average health score"
 - "Which breeds have the lowest average activity levels?"
 - "Show me sleep vs. activity correlation for overweight cats"
-- "What was Garfield's average heart rate over the last 7 days?"
+- "What was Simba's average heart rate over the last 7 days?"
 
 **Pipeline/System Questions (RAG over docs)**
 - "How is the daily_feline_health_score calculated?"
