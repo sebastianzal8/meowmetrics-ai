@@ -52,12 +52,35 @@ def _reset_failures() -> None:
 
 def _execute_select(sql: str) -> list[tuple]:
     """Runs guard-approved SQL against Snowflake (prod) or the DuckDB sandbox (mock)."""
+    # Auto-fix common small-model SQL errors
+    sql = _fix_common_sql_errors(sql)
     hardened, _ = sanitize_sql(sql, max_rows=CONFIG.max_rows_per_query)
     if _warehouse_mode():
         from ai.data_access.gold_client import run_select
         _cols, rows = run_select(hardened)
         return rows
     return run_select_in_sandbox(hardened)
+
+
+def _fix_common_sql_errors(sql: str) -> str:
+    """Auto-correct frequent mistakes from small models."""
+    # Fix double-quoted string literals -> single quotes
+    # Pattern: = "value" or IN ("val1", "val2") or > "val" etc.
+    # Only replace double quotes around values that look like dates/strings, not identifiers
+    import re
+    
+    # Replace "YYYY-MM-DD" with 'YYYY-MM-DD' (date literals)
+    sql = re.sub(r'"(\d{4}-\d{2}-\d{2})"', r"'\1'", sql)
+    
+    # Replace "CATxxx" with 'CATxxx' (cat_id literals)
+    sql = re.sub(r'"(CAT\d+)"', r"'\1'", sql, flags=re.IGNORECASE)
+    
+    # Replace "word" with 'word' for common string literals in WHERE clauses
+    # Be careful not to break identifiers - only fix in WHERE/IN/= contexts
+    # This regex looks for = "value" or IN ("value") patterns
+    sql = re.sub(r'(=\s*|IN\s*\()\s*"([^"]+)"\s*(\)?)', r"\1'\2'\3", sql)
+    
+    return sql
 
 
 def _rows_to_markdown(rows: list[tuple], max_cell_chars: int = 40) -> str:

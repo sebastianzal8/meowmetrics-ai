@@ -69,43 +69,73 @@ graph TD
 
 ---
 
-## 🚀 How to Setup and Run
+## 🚀 How to Setup and Run (Local MVP)
 
-### 1. Initialize Git and Push to GitHub
-If you want to host this codebase on your GitHub profile:
+### Prerequisites
+- **Python 3.10+**
+- **Ollama** for local LLM inference: [Install Ollama](https://ollama.com/), then `ollama pull llama3.2` (or `llama3.1:8b`, `qwen2.5:7b`)
+
+---
+
+### 1. Clone & Create Shared Virtual Environment
 ```bash
-# In your terminal, navigate to your project directory:
+git clone https://github.com/YOUR_GITHUB_USERNAME/meowmetrics.git
 cd meowmetrics
 
-# Initialize Git
-git init
-
-# Add all files to staging
-git add .
-
-# Commit changes
-git commit -m "feat: initial commit of MeowMetrics pipeline"
-
-# Go to GitHub, create a new empty repository named "meowmetrics"
-# Add your GitHub repository link as a remote:
-git remote add origin https://github.com/YOUR_GITHUB_USERNAME/meowmetrics.git
-git branch -M main
-
-# Push the code
-git push -u origin main
-```
-
-### 2. Run the Streamlit Dashboard Locally
-To preview the interactive analytics panel:
-```bash
-cd dashboard
+# Single venv at repo root (dashboard + AI share dependencies)
 python -m venv venv
-source venv/Scripts/activate # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-streamlit run app.py
+source venv/Scripts/activate  # Windows: venv\Scripts\activate
+pip install -r dashboard/requirements.txt
+pip install -r ai/requirements.txt
 ```
 
-### 3. Tableau Dashboard Connection Guide
+### 2. Run the Dashboard (includes AI Copilot)
+```bash
+streamlit run dashboard/app.py
+```
+Open http://localhost:8501 — the **AI Copilot panel** is embedded in the dashboard (no separate process).
+
+---
+
+### ⚠️ Why No Bronze/Silver in the Local MVP?
+
+| Layer | Production | Local MVP |
+|-------|------------|-----------|
+| **Bronze** (raw JSON → Delta Lake) | Databricks PySpark on cloud storage (S3/ADLS) | ❌ Requires Databricks cluster + cloud object store |
+| **Silver** (cleaned, deduped Delta) | Databricks Spark + Delta Lake | ❌ Requires Spark runtime + Delta format |
+| **Gold** (dbt → Snowflake) | Snowflake + dbt Core | ❌ Requires Snowflake account |
+| **Mock Gold** | — | ✅ **`ai/data_access/mock_data.py`** — deterministic synthetic data matching `BI_TABLEAU_VIEWS` schema |
+
+**The architecture diagram above shows the *production* pipeline.** This repo contains all the code for each layer (`databricks/`, `snowflake/`, `dbt_project/`, `airflow/`, `terraform/`), but running Bronze→Silver→Gold locally would require:
+- A Databricks workspace (~$500+/mo) or local Spark + MinIO + Delta Lake
+- A Snowflake account (free trial works, but extra setup)
+- Terraform-provisioned infrastructure
+
+**For portfolio/demo purposes**, the mock Gold layer lets you showcase the **end product** (dashboard + AI copilot + dbt models) working immediately without cloud spend. The dbt models in `dbt_project/models/marts/` are production-ready — point them at a real Snowflake and run `dbt run` to materialize the Gold layer.
+
+### 5. Suggested Prompts for the AI Copilot
+The embedded copilot (🤖 Ask the Pipeline) runs a local Ollama model with access to the Gold-layer data and project docs. Try these:
+
+**Data Questions (SQL over Gold layer)**
+- "Which cats had heart-rate anomalies yesterday?"
+- "Show me the health score for Whiskers last week"
+- "List all cats with their breed and average health score"
+- "Which breeds have the lowest average activity levels?"
+- "Show me sleep vs. activity correlation for overweight cats"
+- "What was Garfield's average heart rate over the last 7 days?"
+
+**Pipeline/System Questions (RAG over docs)**
+- "How is the daily_feline_health_score calculated?"
+- "What does the dbt daily_cat_health model do?"
+- "How does the pipeline handle deduplication?"
+- "What are the health status categories and their thresholds?"
+- "Explain the Bronze → Silver → Gold data flow"
+
+**Model Selector**: Use the dropdown to switch models. `llama3.2:3b` is fast; `llama3.1:8b` or `qwen2.5:7b` are more accurate on complex SQL.
+
+---
+
+### 6. Tableau Dashboard Connection Guide
 To visualize the dbt Gold-layer outputs in **Tableau**:
 1. **Pre-requisite**: Install the **Snowflake ODBC driver** on your system.
 2. In Tableau, select **Connect** -> **To a Server** -> **Snowflake**.
