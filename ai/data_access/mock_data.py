@@ -17,7 +17,7 @@ import pandas as pd
 
 CATS = [
     {"cat_id": "CAT001", "cat_name": "Gaia", "breed": "Chanda", "gender": "female", "age_years": 3, "human_equivalent_age": 28, "weight_lbs": 8.4, "weight_category": "healthy weight"},
-    {"cat_id": "CAT002", "cat_name": "Michin", "breed": "Callejero", "gender": "male", "age_years": 5, "human_equivalent_age": 36, "weight_lbs": 16.2, "weight_category": "overweight"},
+    {"cat_id": "CAT002", "cat_name": "Michin", "breed": "Stray", "gender": "male", "age_years": 5, "human_equivalent_age": 36, "weight_lbs": 16.2, "weight_category": "overweight"},
     {"cat_id": "CAT003", "cat_name": "Milo", "breed": "Persian", "gender": "male", "age_years": 8, "human_equivalent_age": 48, "weight_lbs": 12.8, "weight_category": "overweight"},
     {"cat_id": "CAT004", "cat_name": "Bella", "breed": "Ragdoll", "gender": "female", "age_years": 1, "human_equivalent_age": 15, "weight_lbs": 9.1, "weight_category": "healthy weight"},
     {"cat_id": "CAT005", "cat_name": "Simba", "breed": "Tabby", "gender": "male", "age_years": 12, "human_equivalent_age": 64, "weight_lbs": 17.5, "weight_category": "obese"},

@@ -135,8 +135,7 @@ cd meowmetrics
 # Single venv at repo root (dashboard + AI share dependencies)
 python -m venv venv
 source venv/Scripts/activate  # Windows: venv\Scripts\activate
-pip install -r dashboard/requirements.txt
-pip install -r ai/requirements.txt
+pip install -r dashboard/requirements.txt && pip install -r ai/requirements.txt
 ```
 
 ### 2. Run the Dashboard (includes AI Copilot)

@@ -30,7 +30,7 @@ You have access to exactly ONE fact table, `MEOW_DB.ANALYTICS.BI_TABLEAU_VIEWS`
 _TODAY = date.today().isoformat()
 
 FEW_SHOT_EXAMPLES = """
-EXAMPLES — Follow this pattern exactly:
+EXAMPLES — Follow this pattern exactly. Use SINGLE QUOTES for date/string literals.
 
 User: "Which cats had heart-rate anomalies yesterday?"
 Assistant: I'll query the Gold layer for yesterday's readings where heart rate was flagged.
@@ -38,32 +38,65 @@ Assistant: I'll query the Gold layer for yesterday's readings where heart rate w
 [TOOL RESULT] 0 rows returned.
 Assistant: No cats had heart-rate anomalies (flagged as -1) yesterday.
 
-User: "Show me the health score for Whiskers last week"
-Assistant: First I'll get the cat directory to find Whiskers' ID, then query the last 7 days.
+User: "Show me the health score for Gaia last week"
+Assistant: First I'll get the cat directory to find Gaia's ID, then query the last 7 days. Using TODAY'S DATE (2026-10-20), last 7 days = reading_date >= '2026-10-13' AND reading_date <= '2026-10-20'.
 [TOOL CALL] get_cat_directory()
 [TOOL RESULT] cat_id | cat_name | breed | weight_category | age_years
-CAT001 | Whiskers | Siamese | healthy weight | 3
-CAT002 | Mittens | Maine Coon | overweight | 5
-[TOOL CALL] query_gold_layer(sql="SELECT cat_id, cat_name, reading_date, daily_feline_health_score, health_status_category FROM MEOW_DB.ANALYTICS.BI_TABLEAU_VIEWS WHERE cat_id = 'CAT001' AND reading_date >= '2025-01-08' AND reading_date <= '2025-01-14' ORDER BY reading_date LIMIT 7")
+CAT001 | Gaia | Chanda | healthy weight | 3
+CAT002 | Michin | Callejero | overweight | 5
+CAT003 | Milo | Persian | overweight | 8
+CAT004 | Bella | Ragdoll | healthy weight | 1
+CAT005 | Simba | Tabby | obese | 12
+[TOOL CALL] query_gold_layer(sql="SELECT cat_id, cat_name, reading_date, daily_feline_health_score, health_status_category FROM MEOW_DB.ANALYTICS.BI_TABLEAU_VIEWS WHERE cat_id = 'CAT001' AND reading_date >= '2026-10-13' AND reading_date <= '2026-10-20' ORDER BY reading_date LIMIT 7")
 [TOOL RESULT] reading_date | daily_feline_health_score | health_status_category
-2025-01-08 | 85 | Good
-2025-01-09 | 82 | Good
-2025-01-10 | 78 | Needs Attention
-2025-01-11 | 80 | Good
-2025-01-12 | 83 | Good
-2025-01-13 | 79 | Needs Attention
-2025-01-14 | 81 | Good
-Assistant: Whiskers (CAT001) health scores for the last 7 days:
+2026-10-13 | 85 | Good
+2026-10-14 | 82 | Good
+2026-10-15 | 78 | Needs Attention
+2026-10-16 | 80 | Good
+2026-10-17 | 83 | Good
+2026-10-18 | 79 | Needs Attention
+2026-10-19 | 81 | Good
+Assistant: Gaia (CAT001) health scores for the last 7 days:
 | reading_date | daily_feline_health_score | health_status_category |
 |--------------|---------------------------|------------------------|
-| 2025-01-08   | 85                        | Good                   |
-| 2025-01-09   | 82                        | Good                   |
-| 2025-01-10   | 78                        | Needs Attention        |
-| 2025-01-11   | 80                        | Good                   |
-| 2025-01-12   | 83                        | Good                   |
-| 2025-01-13   | 79                        | Needs Attention        |
-| 2025-01-14   | 81                        | Good                   |
+| 2026-10-13   | 85                        | Good                   |
+| 2026-10-14   | 82                        | Good                   |
+| 2026-10-15   | 78                        | Needs Attention        |
+| 2026-10-16   | 80                        | Good                   |
+| 2026-10-17   | 83                        | Good                   |
+| 2026-10-18   | 79                        | Needs Attention        |
+| 2026-10-19   | 81                        | Good                   |
 Average: 81.1. Two days dipped to "Needs Attention".
+
+User: "Which cat has the most steps in the last 7 days?"
+Assistant: I'll aggregate total steps per cat over the last 7 days. Using TODAY'S DATE (2026-10-20), last 7 days = reading_date >= '2026-10-13' AND reading_date <= '2026-10-20'.
+[TOOL CALL] query_gold_layer(sql="SELECT cat_id, cat_name, SUM(total_daily_steps) AS total_steps FROM MEOW_DB.ANALYTICS.BI_TABLEAU_VIEWS WHERE reading_date >= '2026-10-13' AND reading_date <= '2026-10-20' GROUP BY cat_id, cat_name ORDER BY total_steps DESC LIMIT 5")
+[TOOL RESULT] cat_id | cat_name | total_steps
+CAT001 | Gaia | 33571
+CAT004 | Bella | 29898
+CAT005 | Simba | 12248
+CAT003 | Milo | 10483
+CAT002 | Michin | 9998
+Assistant: **Most steps (last 7 days):**
+| cat_name | total_steps |
+|----------|-------------|
+| Gaia     | 33,571      |
+| Bella    | 29,898      |
+| Simba    | 12,248      |
+| Milo     | 10,483      |
+| Michin   | 9,998       |
+Gaia (CAT001) had the most steps at 33,571. Michin (CAT002) had the fewest at 9,998.
+
+User: "Which cat is the oldest?"
+Assistant: I'll check the cat directory for ages.
+[TOOL CALL] get_cat_directory()
+[TOOL RESULT] cat_id | cat_name | breed | weight_category | age_years
+CAT001 | Gaia | Chanda | healthy weight | 3
+CAT002 | Michin | Callejero | overweight | 5
+CAT003 | Milo | Persian | overweight | 8
+CAT004 | Bella | Ragdoll | healthy weight | 1
+CAT005 | Simba | Tabby | obese | 12
+Assistant: The oldest cat is **Simba (CAT005)** at 12 years old. The youngest is Bella (CAT004) at 1 year.
 
 User: "How is the health score calculated?"
 Assistant: I'll search the project docs for the dbt model that computes the health score.
