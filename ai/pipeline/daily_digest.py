@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -115,7 +115,7 @@ def generate_digests(lookback_days: int | None = None) -> pd.DataFrame:
             "model_name": CONFIG.chat_model,
             "prompt_hash": prompt_hash,
             "tokens_used": tokens,
-            "generated_at": datetime.now(UTC).isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),  # noqa: UP017
         })
 
     return pd.DataFrame(out)

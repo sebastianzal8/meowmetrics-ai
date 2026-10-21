@@ -1,9 +1,13 @@
 from datetime import datetime, timedelta
-from airflow import DAG
+
 from airflow.operators.bash import BashOperator
-from airflow.providers.databricks.operators.databricks import DatabricksSubmitRunOperator
+from airflow.providers.databricks.operators.databricks import (
+    DatabricksSubmitRunOperator,
+)
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from airflow.utils.task_group import TaskGroup
+
+from airflow import DAG
 
 # Default arguments for the DAG (best practice for production pipelines)
 default_args = {
@@ -93,5 +97,24 @@ with DAG(
 
         task_dbt_deps >> task_dbt_run >> task_dbt_test
 
+    # 4. LLM DAILY DIGEST (optional — runs after dbt completes)
+    # Generates per-cat natural-language health digests from Gold-layer data
+    with TaskGroup("llm_digest") as digest_group:
+        
+        task_llm_digest = BashOperator(
+            task_id='generate_daily_digests',
+            bash_command='cd /opt/airflow && python -m ai.pipeline.daily_digest',
+            env={
+                'SF_USER': '{{ var.value.sf_user }}',
+                'SF_PASSWORD': '{{ var.value.sf_password }}',
+                'SF_ACCOUNT': '{{ var.value.sf_account }}',
+                'SF_WAREHOUSE': 'MEOW_WH',
+                'SF_DATABASE': 'MEOW_DB',
+                'SF_SCHEMA': 'ANALYTICS',
+                'OLLAMA_BASE_URL': 'http://host.docker.internal:11434',
+                'AI_CHAT_MODEL': 'llama3.2:3b',
+            }
+        )
+
     # Define Top-Level Dependencies
-    databricks_group >> snowflake_group >> dbt_group
+    databricks_group >> snowflake_group >> dbt_group >> digest_group
