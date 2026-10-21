@@ -72,5 +72,8 @@ jobs:
         echo "      warehouse: mock" >> profiles.yml
         echo "      schema: mock" >> profiles.yml
         
+        # Install dbt package dependencies (from packages.yml)
+        dbt deps --profiles-dir .
+        
         # dbt parse compiles the YAML and SQL configs to verify they have no syntax issues
         dbt parse --profiles-dir .
