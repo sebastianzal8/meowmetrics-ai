@@ -15,18 +15,20 @@ GRANT ROLE MEOW_ADMIN_ROLE TO ROLE SYSADMIN;
 USE ROLE SYSADMIN;
 
 CREATE WAREHOUSE IF NOT EXISTS MEOW_WH
-  WITH WAREHOUSE_SIZE = 'XSMALL'
-  AUTO_SUSPEND = 60
-  AUTO_RESUME = TRUE
-  INITIALLY_SUSPENDED = TRUE
-  COMMENT = 'Compute warehouse for MeowMetrics ELT pipelines';
+WITH WAREHOUSE_SIZE = 'XSMALL'
+AUTO_SUSPEND = 60
+AUTO_RESUME = TRUE
+INITIALLY_SUSPENDED = TRUE
+COMMENT = 'Compute warehouse for MeowMetrics ELT pipelines';
 
 -- Create Database
 CREATE DATABASE IF NOT EXISTS MEOW_DB;
 
 -- Transfer ownership of database and warehouse to custom role
-GRANT OWNERSHIP ON DATABASE MEOW_DB TO ROLE MEOW_ADMIN_ROLE COPY CURRENT GRANTS;
-GRANT OWNERSHIP ON WAREHOUSE MEOW_WH TO ROLE MEOW_ADMIN_ROLE COPY CURRENT GRANTS;
+GRANT OWNERSHIP ON DATABASE MEOW_DB TO ROLE MEOW_ADMIN_ROLE
+COPY CURRENT GRANTS;
+GRANT OWNERSHIP ON WAREHOUSE MEOW_WH TO ROLE MEOW_ADMIN_ROLE
+COPY CURRENT GRANTS;
 
 -- 3. SCHEMA & OBJECT CREATION
 USE ROLE MEOW_ADMIN_ROLE;
@@ -43,28 +45,28 @@ USE SCHEMA RAW_STAGE;
 
 -- CSV File Format for Cat Breed/Registry CSV files
 CREATE OR REPLACE FILE FORMAT CSV_FILE_FORMAT
-  TYPE = 'CSV'
-  FIELD_DELIMITER = ','
-  SKIP_HEADER = 1
-  NULL_IF = ('NULL', 'null', '')
-  EMPTY_FIELD_AS_NULL = TRUE
-  ERROR_ON_COLUMN_MISMATCH = FALSE;
+TYPE = 'CSV'
+FIELD_DELIMITER = ','
+SKIP_HEADER = 1
+NULL_IF = ('NULL', 'null', '')
+EMPTY_FIELD_AS_NULL = TRUE
+ERROR_ON_COLUMN_MISMATCH = FALSE; -- noqa: PRS
 
 -- Parquet File Format for Databricks Silver outputs
 CREATE OR REPLACE FILE FORMAT PARQUET_FILE_FORMAT
-  TYPE = 'PARQUET'
-  COMPRESSION = 'SNAPPY';
+TYPE = 'PARQUET'
+COMPRESSION = 'SNAPPY';
 
 -- 5. EXTERNAL STAGES CONFIGURATION
 -- Points to the storage locations where Databricks exports the cleaned data.
 -- (Credentials should be configured using Snowflake Storage Integrations in production).
 CREATE OR REPLACE STAGE MEOW_EXT_STAGE_TELEMETRY
-  URL = 's3://meowmetrics-lakehouse/silver/collar_telemetry_cleaned/'
-  FILE_FORMAT = PARQUET_FILE_FORMAT;
+    URL = 's3://meowmetrics-lakehouse/silver/collar_telemetry_cleaned/'
+    FILE_FORMAT = PARQUET_FILE_FORMAT;
 
 CREATE OR REPLACE STAGE MEOW_EXT_STAGE_REGISTRY
-  URL = 's3://meowmetrics-lakehouse/raw/cat_registry/'
-  FILE_FORMAT = CSV_FILE_FORMAT;
+    URL = 's3://meowmetrics-lakehouse/raw/cat_registry/'
+    FILE_FORMAT = CSV_FILE_FORMAT;
 
 -- 6. STAGING TABLES FOR DATA LOADING
 -- Raw table for IoT smart-collar telemetry (stores structured elements)

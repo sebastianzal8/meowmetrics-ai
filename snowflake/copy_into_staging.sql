@@ -13,22 +13,23 @@ USE WAREHOUSE MEOW_WH;
 -- fields dynamically from the `$1` variant structure during ingestion.
 COPY INTO RAW_STAGE.STG_RAW_COLLAR_TELEMETRY
 FROM (
-  SELECT
-    $1:collar_id::VARCHAR,
-    $1:cat_id::VARCHAR,
-    $1:parsed_reading_time::TIMESTAMP,
-    $1:heart_rate_bpm::INT,
-    $1:activity_level::VARCHAR,
-    $1:steps_count::INT,
-    $1:purr_frequency_hz::FLOAT,
-    $1:ambient_temp_c::FLOAT,
-    $1:battery_level_pct::INT,
-    CURRENT_TIMESTAMP()::TIMESTAMP, -- tracking load audit timestamp
-    METADATA$FILENAME::VARCHAR     -- capture source filename
-  FROM @RAW_STAGE.MEOW_EXT_STAGE_TELEMETRY
+    SELECT -- noqa: ST06
+        $1 AS SOURCE_VARIANT,
+        $1:collar_id::VARCHAR AS COLLAR_ID,
+        $1:cat_id::VARCHAR AS CAT_ID,
+        $1:parsed_reading_time::TIMESTAMP AS READING_TIME,
+        $1:heart_rate_bpm::INT AS HEART_RATE_BPM,
+        $1:activity_level::VARCHAR AS ACTIVITY_LEVEL,
+        $1:steps_count::INT AS STEPS_COUNT,
+        $1:purr_frequency_hz::FLOAT AS PURR_FREQUENCY_HZ,
+        $1:ambient_temp_c::FLOAT AS AMBIENT_TEMP_C,
+        $1:battery_level_pct::INT AS BATTERY_LEVEL_PCT,
+        CURRENT_TIMESTAMP()::TIMESTAMP AS INGESTED_AT,
+        METADATA$FILENAME::VARCHAR AS SOURCE_FILE
+    FROM @RAW_STAGE.MEOW_EXT_STAGE_TELEMETRY
 )
 FILE_FORMAT = (FORMAT_NAME = 'RAW_STAGE.PARQUET_FILE_FORMAT')
-ON_ERROR = 'CONTINUE'; -- Logs and continues if a single malformed file fails
+ON_ERROR = 'CONTINUE';
 
 
 -- 2. LOAD CSV BREED AND REGISTRATION DATA FROM EXTERNAL STAGE
@@ -42,8 +43,8 @@ ON_ERROR = 'ABORT_STATEMENT'; -- Abort if reference data metadata is corrupted
 -- 3. AUDIT RECENT LOADS
 -- Query metadata details to confirm load progress
 SELECT
-  TABLE_NAME,
-  ROW_COUNT,
-  LAST_ALTERED
+    TABLE_NAME,
+    ROW_COUNT,
+    LAST_ALTERED
 FROM INFORMATION_SCHEMA.TABLES
 WHERE TABLE_SCHEMA = 'RAW_STAGE';
