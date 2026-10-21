@@ -10,29 +10,29 @@ This repository serves as a portfolio project demonstrating expertise in **Datab
 
 ```mermaid
 graph TD
-    A[Smart Collar IoT Raw JSON] -->|S3 / ADLS Gen2 Stage| B(Databricks Bronze Layer)
-    B -->|PySpark and Delta Lake| C(Databricks Silver Layer - Cleaned and De-duplicated Parquet)
-    C -->|COPY INTO and Snowpipe| D[(Snowflake Raw Staging Schema)]
-    D -->|dbt Models and Tests| E[(Snowflake Gold Star Schema)]
-    E -->|dbt Marts and Views| F[Tableau Desktop Dashboard]
-    E -->|Read via Snowflake Connector| G[Streamlit Dashboard App]
-    
+    A[Smart Collar IoT Raw JSON] -->|"S3 / ADLS Gen2 Stage"| B(Databricks Bronze Layer)
+    B -->|"PySpark and Delta Lake"| C("Databricks Silver Layer - Cleaned and De-duplicated Parquet")
+    C -->|"COPY INTO and Snowpipe"| D[("Snowflake Raw Staging Schema")]
+    D -->|"dbt Models and Tests"| E[("Snowflake Gold Star Schema")]
+    E -->|"dbt Marts and Views"| F[Tableau Desktop Dashboard]
+    E -->|"Read via Snowflake Connector"| G[Streamlit Dashboard App]
+
     %% AI Copilot Layer
-    E -.->|BI_TABLEAU_VIEWS read-only SQL| H[AI Copilot Agent\nLangGraph ReAct + Ollama]
-    G -.->|Project docs (README, dbt, DAGs, etc.)| I[ChromaDB Vector Store\nnomic-embed-text]
-    I -.->|Semantic search| H
-    H -.->|Natural language Q&A| G
-    H -.->|Experiment tracking| J[MLflow]
-    
+    E -.->|"BI_TABLEAU_VIEWS read-only SQL"| H["AI Copilot Agent<br/>LangGraph ReAct + Ollama"]
+    P["Project docs<br/>README, dbt, DAGs"] -.->|"Chunk and embed"| I[("ChromaDB Vector Store<br/>nomic-embed-text")]
+    I -.->|"Semantic search"| H
+    H -.->|"Natural language Q&A"| G
+    H -.->|"Experiment tracking"| J[MLflow]
+
     subgraph Orchestration
         K[Apache Airflow DAG] -.->|Triggers| B
         K -.->|Triggers| D
         K -.->|Triggers| E
         K -.->|Triggers| L[LLM Daily Digest Task]
     end
-    
+
     subgraph Infrastructure
-        M[Terraform Configuration] -->|Deploys| N[Snowflake Schema and Storage Bucket]
+        M[Terraform Configuration] -->|Deploys| N["Snowflake Schema and Storage Bucket"]
     end
 ```
 
