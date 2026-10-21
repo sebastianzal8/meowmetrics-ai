@@ -15,6 +15,11 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
+from ai.health_rules import HR_MAX_BPM, STEPS_MIN, classify, compute_score
+
+# Share of days per cat that are "rough" (older / heavier cats have more of them).
+ROUGH_DAY_RATE = {"CAT001": 0.08, "CAT002": 0.20, "CAT003": 0.15, "CAT004": 0.05, "CAT005": 0.30}
+
 CATS = [
     {"cat_id": "CAT001", "cat_name": "Gaia", "breed": "Chanda", "gender": "female", "age_years": 3, "human_equivalent_age": 28, "weight_lbs": 8.4, "weight_category": "healthy weight"},
     {"cat_id": "CAT002", "cat_name": "Michin", "breed": "Stray", "gender": "male", "age_years": 5, "human_equivalent_age": 36, "weight_lbs": 16.2, "weight_category": "overweight"},
@@ -42,10 +47,27 @@ def build_mock_gold_data() -> pd.DataFrame:
         base_sleep = 750 if cat["cat_id"] in ["CAT001", "CAT004"] else 950
         base_hr = 135 if cat["cat_id"] != "CAT005" else 155
 
+        rough_rate = ROUGH_DAY_RATE.get(cat["cat_id"], 0.1)
+
         for d in range(DAYS_OF_TELEMETRY):
             current_day = start_date + timedelta(days=d)
             steps = int(np.random.normal(base_steps, 500))
             sleep_min = int(np.random.normal(base_sleep, 60))
+            hr = int(np.random.normal(base_hr, 10))
+            purr = round(max(0.0, float(np.random.normal(25.0, 5.0))), 2)
+
+            # Deterministic "rough days" (illness / stress). Without them, healthy
+            # baselines never cross the real dbt thresholds and every score is 100.
+            if np.random.random() < rough_rate:
+                n_issues = int(np.random.randint(1, 4))
+                for issue in np.random.choice(["heart", "sleep", "steps"], size=n_issues, replace=False):
+                    if issue == "heart":
+                        hr = int(np.random.normal(HR_MAX_BPM + 10, 5))
+                    elif issue == "sleep":
+                        sleep_min = 1200 if np.random.random() < 0.5 else 400
+                    else:
+                        steps = int(np.random.uniform(100, STEPS_MIN - 50))
+
             active_min = int(np.random.normal(1440 - sleep_min - 200, 30))
 
             steps = max(0, steps)
@@ -53,27 +75,10 @@ def build_mock_gold_data() -> pd.DataFrame:
             active_min = min(1440 - sleep_min, max(0, active_min))
             lazy_min = 1440 - sleep_min - active_min
 
-            hr = int(np.random.normal(base_hr, 10))
-            purr = round(max(0.0, float(np.random.normal(25.0, 5.0))), 2)
-
-            # Mirror of the dbt health scoring logic for consistency of the demo
-            score = 100
-            if hr > 150 or hr < 110:
-                score -= 15
-            if sleep_min < 480 or sleep_min > 1100:
-                score -= 15
-            if steps < 1000:
-                score -= 15
-            score = max(0, min(100, score))
-
-            if score >= 85:
-                status = "Excellent"
-            elif score >= 70:
-                status = "Good"
-            elif score >= 50:
-                status = "Needs Attention"
-            else:
-                status = "Critical Care"
+            # Same rules as dbt's daily_cat_health (see ai/health_rules.py). The BI
+            # table exposes no battery column, so that penalty cannot apply here.
+            score = compute_score(hr, sleep_min, steps)
+            status = classify(score)
 
             records.append({
                 "daily_summary_id": f"{cat['cat_id']}_{current_day.strftime('%Y%m%d')}",

@@ -1,7 +1,7 @@
 """LangChain tools exposed to the ReAct agent.
 
 Each tool is deliberately coarse-grained enough for a 3b model to call reliably:
-query SQL, search docs, or list cats — nothing else.
+query SQL, search docs, list cats, or explain a metric — nothing else.
 """
 from __future__ import annotations
 
@@ -69,16 +69,51 @@ def _fix_common_sql_errors(sql: str) -> str:
     # Only replace double quotes around values that look like dates/strings, not identifiers
     import re
     
+    # Replace smart quotes and various Unicode quote characters with straight quotes
+    # U+2018/U+2019: left/right single quotation marks
+    # U+201C/U+201D: left/right double quotation marks
+    # U+FF02: fullwidth quotation mark
+    # U+201E/U+201F: double low-9/double high-reversed-9 quotation marks
+    sql = (sql
+        .replace('\u2018', "'")   # left single quotation mark
+        .replace('\u2019', "'")   # right single quotation mark
+        .replace('\u201c', "'")   # left double quotation mark
+        .replace('\u201d', "'")   # right double quotation mark
+        .replace('\u201e', "'")   # double low-9 quotation mark
+        .replace('\u201f', "'")   # double high-reversed-9 quotation mark
+        .replace('\uff02', "'")   # fullwidth quotation mark
+        # Also handle replacement character (U+FFFD) that may appear when decoding fails
+        .replace('\ufffd', "'")
+    )
+    
     # Replace "YYYY-MM-DD" with 'YYYY-MM-DD' (date literals)
     sql = re.sub(r'"(\d{4}-\d{2}-\d{2})"', r"'\1'", sql)
     
     # Replace "CATxxx" with 'CATxxx' (cat_id literals)
     sql = re.sub(r'"(CAT\d+)"', r"'\1'", sql, flags=re.IGNORECASE)
     
-    # Replace "word" with 'word' for common string literals in WHERE clauses
-    # Be careful not to break identifiers - only fix in WHERE/IN/= contexts
-    # This regex looks for = "value" or IN ("value") patterns
-    sql = re.sub(r'(=\s*|IN\s*\()\s*"([^"]+)"\s*(\)?)', r"\1'\2'\3", sql)
+    # AGGRESSIVE: Replace ALL double-quoted strings that look like VALUES (not identifiers)
+    # In SQL, double quotes are for identifiers, single quotes for string literals.
+    # Any double-quoted string in a value context (after =, <, >, IN, LIKE, etc.) should be single quotes.
+    
+    # Pattern 1: = "value" or > "value" or < "value" or >= "value" or <= "value" or <> "value" or != "value"
+    sql = re.sub(r'(=\s*|>\s*|<\s*|>=\s*|<=\s*|<>\s*|!=\s*)"([^"]+)"', r"\1'\2'", sql)
+    
+    # Pattern 2: IN ("val1", "val2", ...)
+    def _fix_in_clause(match):
+        prefix = match.group(1)
+        values = match.group(2)
+        # Replace all double quotes with single quotes in the IN list
+        fixed_values = re.sub(r'"([^"]+)"', r"'\1'", values)
+        return f"{prefix}{fixed_values})"
+    
+    sql = re.sub(r'(IN\s*\()\s*([^)]+)\s*\)', _fix_in_clause, sql)
+    
+    # Pattern 3: BETWEEN "val1" AND "val2"
+    sql = re.sub(r'BETWEEN\s+"([^"]+)"\s+AND\s+"([^"]+)"', r"BETWEEN '\1' AND '\2'", sql, flags=re.IGNORECASE)
+    
+    # Pattern 4: LIKE "pattern"
+    sql = re.sub(r'(LIKE\s+)"([^"]+)"', r"\1'\2'", sql, flags=re.IGNORECASE)
     
     return sql
 
@@ -139,7 +174,43 @@ def get_cat_directory() -> str:
     return _rows_to_markdown(rows)
 
 
-ALL_TOOLS = [query_gold_layer, search_project_docs, get_cat_directory]
+@tool
+def explain_metric(metric_name: str) -> str:
+    """Return the exact formula and logic for a named health metric.
+
+    Use this when the user asks "how is X calculated?" or "what is the formula for X?".
+    The metric_name should be one of: 'health_score', 'health_status', 'daily_feline_health_score'.
+
+    Returns the dbt model logic with CASE statements, thresholds, and penalties.
+    """
+    metric_name = metric_name.lower().strip()
+
+    if metric_name in ('health_score', 'health_status', 'daily_feline_health_score', 'daily_cat_health'):
+        return (
+            "MEOWMETRICS DAILY FELINE HEALTH SCORE FORMULA (from dbt daily_cat_health.sql):\n\n"
+            "Base score: 100 points\n\n"
+            "Penalties applied:\n"
+            "1. HEART RATE: -20 if avg_heart_rate_bpm > 200 OR avg_heart_rate_bpm < 80\n"
+            "2. SLEEP: -15 if estimated_sleep_minutes < 480 (8 hrs) OR > 1100 (18.3 hrs)\n"
+            "3. ACTIVITY: -15 if total_daily_steps < 500\n"
+            "4. BATTERY: -5 if min_battery_level_pct < 10%\n\n"
+            "Final score = 100 - sum of applicable penalties\n"
+            "Clamped to range [0, 100]\n\n"
+            "Health Status Categories:\n"
+            "- Excellent: score >= 85\n"
+            "- Good: score >= 70 AND < 85\n"
+            "- Needs Attention: score >= 50 AND < 70\n"
+            "- Critical Care: score < 50\n\n"
+            "Source: dbt_project/models/marts/daily_cat_health.sql (health_scoring CTE)"
+        )
+
+    # Fallback for unknown metrics - search docs
+    index = get_doc_index()
+    context = index.format_context(f"how is {metric_name} calculated", k=3)
+    return f"No exact formula found for '{metric_name}'. Related documentation:\n\n{context}"
+
+
+ALL_TOOLS = [query_gold_layer, search_project_docs, get_cat_directory, explain_metric]
 
 _SOURCE_RE = re.compile(r"source file: ([^\n\r]+)", re.IGNORECASE)
 

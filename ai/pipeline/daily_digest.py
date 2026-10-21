@@ -23,37 +23,37 @@ from ai.agent.llm import get_llm
 from ai.agent.prompts import DIGEST_PROMPT_TEMPLATE
 from ai.config import CONFIG
 from ai.data_access.mock_data import build_mock_gold_data
-
-BASELINE_STEPS = 1500
-
-
-def _class_mock(health: float) -> str:
-    if health >= 85:
-        return "Excellent"
-    if health >= 70:
-        return "Good"
-    if health >= 50:
-        return "Needs Attention"
-    return "Critical Care"
+from ai.health_rules import (
+    BAND_GOOD,
+    HR_MAX_BPM,
+    HR_MIN_BPM,
+    SLEEP_MAX_MINUTES,
+    SLEEP_MIN_MINUTES,
+    STEPS_MIN,
+)
 
 
 def compute_risk_flags(window: pd.DataFrame) -> list[str]:
-    """Rule-based flags — deterministic, SQL-equivalent, no LLM involved."""
+    """Rule-based flags — deterministic, SQL-equivalent, no LLM involved.
+
+    Thresholds come from ``ai.health_rules`` (the same values as the dbt score),
+    applied to the window averages.
+    """
     flags: list[str] = []
     avg_score = window["daily_feline_health_score"].mean()
     avg_steps = window["total_daily_steps"].mean()
     avg_sleep = window["estimated_sleep_minutes"].mean()
     avg_hr = window["avg_heart_rate_bpm"].mean()
 
-    if avg_score < 70:
+    if avg_score < BAND_GOOD:
         flags.append(f"7d_avg_health_score_low:{avg_score:.0f}/100")
-    if avg_steps < BASELINE_STEPS:
-        flags.append(f"steps_below_baseline:{avg_steps:.0f}/day")
-    if avg_sleep < 480:
-        flags.append(f"undersleeping:{avg_sleep:.0f}min/day (<480)")
-    if avg_sleep > 1100:
-        flags.append(f"oversleeping:{avg_sleep:.0f}min/day (>1100)")
-    if avg_hr < 90 or avg_hr > 180:
+    if avg_steps < STEPS_MIN:
+        flags.append(f"steps_below_minimum:{avg_steps:.0f}/day (<{STEPS_MIN})")
+    if avg_sleep < SLEEP_MIN_MINUTES:
+        flags.append(f"undersleeping:{avg_sleep:.0f}min/day (<{SLEEP_MIN_MINUTES})")
+    if avg_sleep > SLEEP_MAX_MINUTES:
+        flags.append(f"oversleeping:{avg_sleep:.0f}min/day (>{SLEEP_MAX_MINUTES})")
+    if avg_hr < HR_MIN_BPM or avg_hr > HR_MAX_BPM:
         flags.append(f"heart_rate_out_of_range:{avg_hr:.0f}bpm")
     if window["health_status_category"].isin(["Needs Attention", "Critical Care"]).mean() >= 0.6:
         flags.append("majority_of_days_negative_status")
@@ -93,6 +93,11 @@ def generate_digests(lookback_days: int | None = None) -> pd.DataFrame:
             avg_sleep_minutes=f"{avg_sleep:.0f}",
             avg_hr=f"{avg_hr:.0f}",
             risk_flags=", ".join(flags) if flags else "none",
+            steps_min=STEPS_MIN,
+            sleep_min=SLEEP_MIN_MINUTES,
+            sleep_max=SLEEP_MAX_MINUTES,
+            hr_min=HR_MIN_BPM,
+            hr_max=HR_MAX_BPM,
         )
 
         response = llm.invoke(prompt)
