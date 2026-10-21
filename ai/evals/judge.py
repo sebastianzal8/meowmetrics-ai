@@ -24,6 +24,6 @@ def faithfulness_score(question: str, context: str, answer: str) -> float:
         response = llm.invoke(prompt)
         value = _parse_int_loose(str(response.content))
         return float(value) if value is not None else 0.0
-    except Exception as exc:
+    except (RuntimeError, ValueError, TypeError, AttributeError) as exc:
         print(f"[judge] scoring failed: {exc}")
         return 0.0

@@ -1,10 +1,13 @@
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import os
 import sys
 from pathlib import Path
+
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
+from ai.data_access.mock_data import build_mock_gold_data
 
 # Allow importing the ai package (shared mock data + copilot) when running
 # `streamlit run app.py` from inside dashboard/
@@ -56,7 +59,7 @@ st.markdown("""
 # DBTITLE 1,Database Connection & Data Loading
 # The mock Gold-layer generator was moved to `ai/data_access/mock_data.py` so
 # the dashboard, the AI copilot and the eval harness all share one dataset.
-from ai.data_access.mock_data import build_mock_gold_data
+# (Import moved to top of file for lint compliance)
 
 @st.cache_data
 def get_mock_data():
@@ -86,8 +89,8 @@ def load_data():
             cs.close()
             ctx.close()
             return df
-        except Exception as e:
-            st.sidebar.warning(f"Failed to connect to Snowflake: {str(e)}. Falling back to mock data.")
+        except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+            st.sidebar.warning(f"Failed to connect to Snowflake: {e!s}. Falling back to mock data.")
             return get_mock_data()
     else:
         return get_mock_data()

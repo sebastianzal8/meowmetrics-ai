@@ -8,11 +8,9 @@ Safety model:
 """
 from __future__ import annotations
 
-from typing import Tuple
-
 import pandas as pd
 
-from ai.config import CONFIG, sf_creds_complete
+from ai.config import CONFIG
 from ai.data_access.sql_guard import SQLGuardError, sanitize_sql
 
 _DENY_TOKENS = {"insert", "update", "delete", "merge", "drop", "alter", "create", "truncate",
@@ -46,7 +44,7 @@ def connect_sql():
     return ctx
 
 
-def run_select(sql: str) -> Tuple[list[str], list[tuple]]:
+def run_select(sql: str) -> tuple[list[str], list[tuple]]:
     """Execute a guard-approved SELECT on Snowflake. Returns (columns, rows)."""
     safe_sql = _assert_safe(sql)
     ctx = connect_sql()

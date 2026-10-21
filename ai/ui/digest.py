@@ -23,7 +23,7 @@ def _load_digests_discriminatively():
             cs.close()
             ctx.close()
             return df, "snowflake"
-        except Exception as exc:
+        except (RuntimeError, ValueError, TypeError, AttributeError) as exc:
             st.warning(f"Snowflake digest read failed ({exc}); trying local CSV…")
     from ai.config import CONFIG
 

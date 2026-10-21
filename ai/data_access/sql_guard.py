@@ -11,7 +11,6 @@ the agent can retry with feedback.
 from __future__ import annotations
 
 import re
-from typing import Tuple
 
 import sqlglot
 from sqlglot import expressions as exp
@@ -33,7 +32,7 @@ class SQLGuardError(ValueError):
     """Raised when a generated query fails validation."""
 
 
-def sanitize_sql(raw_sql: str, max_rows: int = DEFAULT_MAX_LIMIT) -> Tuple[str, int]:
+def sanitize_sql(raw_sql: str, max_rows: int = DEFAULT_MAX_LIMIT) -> tuple[str, int]:
     """Validate and harden a single SELECT statement. Returns (sql, limit)."""
     if not raw_sql or not raw_sql.strip():
         raise SQLGuardError("Empty query.")
@@ -50,7 +49,7 @@ def sanitize_sql(raw_sql: str, max_rows: int = DEFAULT_MAX_LIMIT) -> Tuple[str, 
     # list, which also gives us an exact multi-statement check.
     try:
         statements = sqlglot.parse(sql, dialect="snowflake")
-    except Exception as exc:  # sqlglot raises ParseError/TokenError etc.
+    except (RuntimeError, ValueError, TypeError, AttributeError) as exc:  # sqlglot raises ParseError/TokenError etc.
         raise SQLGuardError(f"SQL parse failed: {exc}") from exc
 
     statements = [s for s in statements if s is not None]

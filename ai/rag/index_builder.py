@@ -14,8 +14,7 @@ path + section title in metadata so the agent can cite files.
 from __future__ import annotations
 
 import shutil
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 
 import chromadb
 from langchain_ollama import OllamaEmbeddings
@@ -104,7 +103,7 @@ def build_index(force: bool = False) -> dict:
         for chunk in _make_chunks(text):
             ids.append(f"{rel}::{len(ids)}")
             docs.append(chunk)
-            metas.append({"source": rel, "indexed_at": datetime.now(timezone.utc).isoformat()})
+            metas.append({"source": rel, "indexed_at": datetime.now(UTC).isoformat()})
         stats["files"] += 1
 
     # Batch in chunks of 64 to keep Ollama embedding responsive

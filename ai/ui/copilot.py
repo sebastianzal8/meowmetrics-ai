@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 
 import streamlit as st
 
@@ -83,7 +82,7 @@ def render_copilot() -> None:
                         "**Sources:** " +
                         " · ".join(f"`{s}`" for s in result["sources"])
                     )
-            except Exception as exc:
+            except (RuntimeError, ValueError, TypeError, AttributeError) as exc:
                 result = {"answer": "", "trace": [], "sources": []}
                 placeholder.error(
                     f"Agent error: {exc}\n\nCheck that Ollama is running "
@@ -106,6 +105,7 @@ def render_copilot() -> None:
 
 
 if __name__ == "__main__":  # pragma: no cover
-    import sys as _sys, pathlib as _p
+    import pathlib as _p
+    import sys as _sys
     _sys.path.insert(0, str(_p.Path(__file__).resolve().parents[2]))
     render_copilot()

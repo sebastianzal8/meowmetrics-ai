@@ -1,5 +1,6 @@
 """Agent prompts and the table-schema knowledge injected into the system prompt."""
 from __future__ import annotations
+
 from datetime import date
 
 BI_TABLE_DOC = """\

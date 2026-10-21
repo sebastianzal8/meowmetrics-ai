@@ -111,7 +111,7 @@ def query_gold_layer(sql: str) -> str:
             sql,
             f"SQL REJECTED by guardrail: {exc}\nRewrite as a single SELECT … LIMIT n.",
         )
-    except Exception as exc:  # Snowflake/duckdb execution errors surface to the agent
+    except (RuntimeError, ValueError, TypeError) as exc:  # DB execution errors
         return _note_failure(
             sql,
             f"SQL EXECUTION ERROR: {exc}\nFix the SQL and retry.",

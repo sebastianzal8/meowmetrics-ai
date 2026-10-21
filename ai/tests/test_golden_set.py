@@ -8,7 +8,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # project root
 
-from ai.evals.run_evals import GOLDEN_SET_PATH  # noqa: E402
+from ai.evals.run_evals import GOLDEN_SET_PATH
 
 
 def test_golden_set_wellformed():

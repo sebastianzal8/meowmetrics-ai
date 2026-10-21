@@ -20,15 +20,11 @@ import traceback
 from pathlib import Path
 
 import pandas as pd
-import sqlglot
 import yaml
-from sqlglot import expressions as exp
 
 from ai.agent import agent as agent_module
 from ai.agent.tools import search_project_docs
 from ai.config import CONFIG
-from ai.data_access.mock_data import build_mock_gold_data
-from ai.data_access.sandbox import run_select_in_sandbox
 from ai.data_access.sql_guard import SQLGuardError, normalize_sql, sanitize_sql
 from ai.evals.judge import faithfulness_score
 
@@ -68,10 +64,9 @@ def score_sql(qitem: dict) -> dict:
     result = agent_module.ask(question)
     answer = result.get("answer", "")
     agent_sql = _sql_from_trace(result.get("trace", []))
-    if not agent_sql:
+    if not agent_sql and answer.strip().lower().startswith(("select", "with")):
         # lenient fallback: only if the answer IS raw SQL (no markdown wrapper)
-        if answer.strip().lower().startswith(("select", "with")):
-            agent_sql = answer
+        agent_sql = answer
 
     metrics = {
         "valid": False, "shape_match": False, "ast_match": False,
@@ -82,7 +77,7 @@ def score_sql(qitem: dict) -> dict:
         return metrics
 
     try:
-        valid, effective = sanitize_sql(agent_sql)
+        valid, _ = sanitize_sql(agent_sql)
     except SQLGuardError as exc:
         metrics["guard_rejects"] = 1
         print(f"[eval {qitem['id']}] guard rejected: {exc}")
@@ -92,7 +87,7 @@ def score_sql(qitem: dict) -> dict:
     try:
         agent_df = execute_on_mock_df(valid)
         metrics["shape_match"] = _result_signature(agent_df) == _result_signature(expected_df)
-    except Exception:
+    except (RuntimeError, ValueError, TypeError, AttributeError):
         print(f"[eval {qitem['id']}] exec failure:\n{traceback.format_exc(limit=3)}")
     metrics["ast_match"] = normalize_sql(agent_sql) == expected_norm
     return metrics
@@ -116,7 +111,7 @@ def score_doc(qitem: dict) -> dict:
     question = qitem["question"]
     try:
         context = search_project_docs.func(question)
-    except Exception as exc:
+    except (RuntimeError, ValueError, TypeError, AttributeError) as exc:
         context = f"RETRIEVAL FAILED: {exc}"
 
     keywords = qitem["expected_doc_keywords"]

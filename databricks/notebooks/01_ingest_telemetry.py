@@ -1,8 +1,13 @@
 # Databricks notebook source
 # DBTITLE 1,Configuration & Setup
-import os
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, TimestampType
-from pyspark.sql.functions import col, current_timestamp, input_file_name
+from pyspark.sql.functions import current_timestamp, input_file_name
+from pyspark.sql.types import (
+    DoubleType,
+    IntegerType,
+    StringType,
+    StructField,
+    StructType,
+)
 
 # Define workspace paths (Simulated AWS S3 Mounts)
 LANDING_ZONE_PATH = "dbfs:/mnt/meowmetrics-lakehouse/landing/collar_telemetry"
@@ -28,7 +33,7 @@ collar_schema = StructType([
 print(f"Initializing Auto Loader stream from: {LANDING_ZONE_PATH}")
 
 raw_stream_df = (
-    spark.readStream
+    spark.readStream  # noqa: F821
     .format("cloudFiles")
     .option("cloudFiles.format", "json")
     .option("cloudFiles.schemaLocation", f"{CHECKPOINT_PATH}/schema")

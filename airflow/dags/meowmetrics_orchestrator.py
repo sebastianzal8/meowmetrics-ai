@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 from airflow import DAG
+from airflow.operators.bash import BashOperator
 from airflow.providers.databricks.operators.databricks import DatabricksSubmitRunOperator
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
-from airflow.operators.bash import BashOperator
 from airflow.utils.task_group import TaskGroup
 
 # Default arguments for the DAG (best practice for production pipelines)
@@ -71,8 +71,6 @@ with DAG(
             database='MEOW_DB',
             schema='RAW_STAGE'
         )
-
-        task_copy_telemetry
 
     # 3. RUN TRANSFORMATION MODELS USING dbt
     # Executes dbt run and dbt test to build Gold-layer stars and validate schema checks

@@ -6,9 +6,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # project root
 
-from ai.data_access.mock_data import CATS, build_mock_gold_data  # noqa: E402
-from ai.data_access.sandbox import run_select_in_sandbox  # noqa: E402
-from ai.data_access.sql_guard import sanitize_sql  # noqa: E402
+from ai.data_access.mock_data import CATS, build_mock_gold_data
+from ai.data_access.sandbox import run_select_in_sandbox
+from ai.data_access.sql_guard import sanitize_sql
 
 
 def test_mock_data_is_deterministic_across_processes():

@@ -1,7 +1,7 @@
 """Pytest tests for SQL guardrails and retriever."""
 import pytest
 
-from ai.data_access.sql_guard import sanitize_sql, SQLGuardError
+from ai.data_access.sql_guard import SQLGuardError, sanitize_sql
 from ai.rag.retriever import get_doc_index
 
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
 
@@ -99,7 +99,7 @@ def generate_digests(lookback_days: int | None = None) -> pd.DataFrame:
         usage = getattr(response, "usage_metadata", None) or {}
         tokens = int(usage.get("total_tokens", 0) or 0)
 
-        first, last = grp["daily_feline_health_score"].iloc[0], grp["daily_feline_health_score"].iloc[-1]
+        _first, _last = grp["daily_feline_health_score"].iloc[0], grp["daily_feline_health_score"].iloc[-1]
         out.append({
             "digest_date": date.today().isoformat(),
             "cat_id": cat_id,
@@ -115,7 +115,7 @@ def generate_digests(lookback_days: int | None = None) -> pd.DataFrame:
             "model_name": CONFIG.chat_model,
             "prompt_hash": prompt_hash,
             "tokens_used": tokens,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         })
 
     return pd.DataFrame(out)

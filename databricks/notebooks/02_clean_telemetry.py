@@ -1,6 +1,11 @@
 # Databricks notebook source
 # DBTITLE 1,Imports & Configuration
-from pyspark.sql.functions import col, to_timestamp, when, row_number, current_timestamp, avg
+from pyspark.sql.functions import (
+    col,
+    row_number,
+    to_timestamp,
+    when,
+)
 from pyspark.sql.window import Window
 
 # Target directories
@@ -11,8 +16,8 @@ CAT_REGISTRY_PATH = "dbfs:/mnt/meowmetrics-lakehouse/raw/cat_registry"  # Static
 # DBTITLE 2,Load Bronze Data and Static Metadata
 print("Loading Bronze telemetry and Cat Breed Registry metadata...")
 
-bronze_df = spark.read.format("delta").load(BRONZE_TABLE_PATH)
-registry_df = spark.read.format("csv").option("header", "true").load(CAT_REGISTRY_PATH)
+bronze_df = spark.read.format("delta").load(BRONZE_TABLE_PATH)  # noqa: F821
+registry_df = spark.read.format("csv").option("header", "true").load(CAT_REGISTRY_PATH)  # noqa: F821
 
 # DBTITLE 3,Data Cleaning and Quality Guardrails
 # 1. Parse timestamps

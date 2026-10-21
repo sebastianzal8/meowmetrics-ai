@@ -59,11 +59,11 @@ class Config:
         return bool(self.sf_user and sf_creds_complete())
 
     @classmethod
-    def load(cls) -> "Config":
+    def load(cls) -> Config:
         return cls()
 
 
-def sf_creds_complete(config: "Config | None" = None) -> bool:
+def sf_creds_complete(config: Config | None = None) -> bool:
     """Snowflake is only in play when user+password+account are all provided."""
     if config is not None:
         return bool(config.sf_user and config.sf_password and config.sf_account)
