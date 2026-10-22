@@ -21,5 +21,6 @@ def get_llm(model: str | None = None, temperature: float | None = None, base_url
             model=key_model,
             base_url=key_base,
             temperature=key_temp,
+            num_ctx=CONFIG.num_ctx,
         )
     return _LLM

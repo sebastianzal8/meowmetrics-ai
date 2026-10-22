@@ -2,16 +2,16 @@ import os
 import sys
 from pathlib import Path
 
+# `streamlit run dashboard/app.py` puts dashboard/ (not the repo root) on
+# sys.path, so make the repo root importable *before* importing `ai`.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 from ai.data_access.mock_data import build_mock_gold_data
-
-# Allow importing the ai package (shared mock data + copilot) when running
-# `streamlit run app.py` from inside dashboard/
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Set page config with a cat theme
 st.set_page_config(

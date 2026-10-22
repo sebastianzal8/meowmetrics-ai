@@ -5,7 +5,9 @@ query SQL, search docs, list cats, or explain a metric — nothing else.
 """
 from __future__ import annotations
 
+import difflib
 import re
+from functools import lru_cache
 
 from langchain_core.tools import tool
 
@@ -62,13 +64,46 @@ def _execute_select(sql: str) -> list[tuple]:
     return run_select_in_sandbox(hardened)
 
 
+@lru_cache(maxsize=1)
+def _bi_columns() -> tuple[str, ...]:
+    """Exact column names of the Gold table (mock mode; empty when on Snowflake)."""
+    if _warehouse_mode():
+        return ()
+    from ai.data_access.sandbox import get_sandbox
+
+    rows = get_sandbox().execute(f"DESCRIBE SELECT * FROM {BI_TABLE}").fetchall()
+    return tuple(str(row[0]) for row in rows)
+
+
+_COLUMN_ERROR_RE = re.compile(r'column\s+"([^"]+)"\s+not found', re.IGNORECASE)
+
+
+def _friendly_sql_error(exc: Exception) -> str:
+    """Turn a database exception into a short observation the model can act on.
+
+    Small models invent column names (``average_heart_rate_bpm`` instead of
+    ``avg_heart_rate_bpm``). Surfacing the real schema plus a closest match lets
+    the ReAct loop repair itself instead of crashing the caller.
+    """
+    detail = " ".join(str(exc).split())
+    if len(detail) > 400:
+        detail = detail[:400] + "…"
+
+    hint = ""
+    missing = _COLUMN_ERROR_RE.search(detail)
+    columns = _bi_columns()
+    if missing and columns:
+        bad = missing.group(1)
+        close = difflib.get_close_matches(
+            bad.lower(), [c.lower() for c in columns], n=1, cutoff=0.6
+        )
+        hint = "\nHint: " + (f"did you mean `{close[0]}`? " if close else "")
+        hint += "Use EXACT column names: " + ", ".join(columns)
+    return f"SQL EXECUTION ERROR: {detail}{hint}\nFix the SQL and retry."
+
+
 def _fix_common_sql_errors(sql: str) -> str:
     """Auto-correct frequent mistakes from small models."""
-    # Fix double-quoted string literals -> single quotes
-    # Pattern: = "value" or IN ("val1", "val2") or > "val" etc.
-    # Only replace double quotes around values that look like dates/strings, not identifiers
-    import re
-    
     # Replace smart quotes and various Unicode quote characters with straight quotes
     # U+2018/U+2019: left/right single quotation marks
     # U+201C/U+201D: left/right double quotation marks
@@ -79,6 +114,12 @@ def _fix_common_sql_errors(sql: str) -> str:
         .replace('\u2019', "'")   # right single quotation mark
         .replace('\u201c', "'")   # left double quotation mark
         .replace('\u201d', "'")   # right double quotation mark
+        .replace('\u2013', "'")   # en dash (small models use it as a quote)
+        .replace('\u2014', "'")   # em dash (same)
+        .replace('\u201a', "'")   # single low-9 quotation mark
+        .replace('\u201b', "'")   # single high-reversed-9 quotation mark
+        .replace('\u2032', "'")   # prime
+        .replace('\u2033', "'")   # double prime
         .replace('\u201e', "'")   # double low-9 quotation mark
         .replace('\u201f', "'")   # double high-reversed-9 quotation mark
         .replace('\uff02', "'")   # fullwidth quotation mark
@@ -146,11 +187,8 @@ def query_gold_layer(sql: str) -> str:
             sql,
             f"SQL REJECTED by guardrail: {exc}\nRewrite as a single SELECT … LIMIT n.",
         )
-    except (RuntimeError, ValueError, TypeError) as exc:  # DB execution errors
-        return _note_failure(
-            sql,
-            f"SQL EXECUTION ERROR: {exc}\nFix the SQL and retry.",
-        )
+    except Exception as exc:  # noqa: BLE001 - a tool must return errors, never crash the graph
+        return _note_failure(sql, _friendly_sql_error(exc))
 
 
 @tool
@@ -165,12 +203,16 @@ def search_project_docs(query: str) -> str:
 
 @tool
 def get_cat_directory() -> str:
-    """List every cat in the registry with cat_id, cat_name, breed and
-    weight_category. Use it to resolve names/IDs before other SQL."""
-    rows = _execute_select(
-        f"SELECT cat_id, cat_name, breed, weight_category, age_years FROM {BI_TABLE} "
-        "GROUP BY cat_id, cat_name, breed, weight_category, age_years LIMIT 50"
-    )
+    """List the identity fields of every cat: cat_id, cat_name, breed and
+    age_years. Use it ONLY to resolve names/IDs before writing SQL; it is not
+    a source of analytics answers (weight, health, steps)."""
+    try:
+        rows = _execute_select(
+            f"SELECT cat_id, cat_name, breed, age_years FROM {BI_TABLE} "
+            "GROUP BY cat_id, cat_name, breed, age_years ORDER BY cat_id LIMIT 50"
+        )
+    except Exception as exc:  # noqa: BLE001 - a tool must return errors, never crash the graph
+        return _friendly_sql_error(exc)
     return _rows_to_markdown(rows)
 
 

@@ -82,11 +82,11 @@ def render_copilot() -> None:
                         "**Sources:** " +
                         " · ".join(f"`{s}`" for s in result["sources"])
                     )
-            except (RuntimeError, ValueError, TypeError, AttributeError) as exc:
-                result = {"answer": "", "trace": [], "sources": []}
+            except Exception as exc:  # noqa: BLE001 - the UI must never crash on agent errors
+                result = {"answer": f"Agent error: {exc}", "trace": [], "sources": []}
                 placeholder.error(
-                    f"Agent error: {exc}\n\nCheck that Ollama is running "
-                    f"(`ollama serve`, port 11434) and the model is pulled."
+                    f"Agent error: {exc}\n\nIf this is a connection problem, check that "
+                    f"Ollama is running (`ollama serve`, port 11434) and the model is pulled."
                 )
 
     st.session_state.copilot_messages.append({

@@ -24,9 +24,9 @@ import pandas as pd
 import yaml
 
 from ai.agent import agent as agent_module
-from ai.agent.tools import search_project_docs
+from ai.agent.tools import _fix_common_sql_errors, search_project_docs
 from ai.config import CONFIG
-from ai.data_access.sql_guard import SQLGuardError, normalize_sql, sanitize_sql
+from ai.data_access.sql_guard import normalize_sql, sanitize_sql
 from ai.evals.judge import faithfulness_score
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -51,9 +51,14 @@ def get_sandbox_con():
 
 
 def _result_signature(df: pd.DataFrame, max_rows: int = 12) -> tuple:
-    """Comparable signature: (shape, column multiset, n rows)."""
-    cols = tuple(sorted(str(c).lower() for c in df.columns))
-    return (df.shape, cols, min(len(df), max_rows))
+    """Comparable signature: result shape (rows, cols) and capped row count.
+
+    Column *names* are ignored on purpose: aliases are cosmetic and a model
+    often picks a different but equally valid alias (``avg_sleep`` vs
+    ``avg_sleep_minutes``). Column *count* still matters, so missing or extra
+    fields are penalized.
+    """
+    return (df.shape, min(len(df), max_rows))
 
 
 def _result_values(df: pd.DataFrame, ndigits: int = 3) -> list[tuple]:
@@ -75,11 +80,24 @@ def _sql_from_trace(trace: list[dict]) -> str | None:
     for entry in trace:
         if entry.get("type") != "tool_call":
             continue
-        for tool_name, args in (entry.get("args") or {}).items():
-            if tool_name == "query_gold_layer" and isinstance(args, dict):
-                sql = args.get("sql")
+
+        # Current AgentStep shape: tool_calls=[{"name": ..., "args": {...}, "id": ...}]
+        for call in entry.get("tool_calls") or []:
+            if call.get("name") == "query_gold_layer":
+                sql = (call.get("args") or {}).get("sql")
                 if sql:
                     sqls.append(sql)
+
+        # Legacy shape kept for backwards compatibility:
+        # {"args": {"query_gold_layer": {"sql": ...}}}
+        legacy = entry.get("args")
+        if isinstance(legacy, dict):
+            for tool_name, args in legacy.items():
+                if tool_name == "query_gold_layer" and isinstance(args, dict):
+                    sql = args.get("sql")
+                    if sql:
+                        sqls.append(sql)
+
     return sqls[-1] if sqls else None
 
 
@@ -89,26 +107,41 @@ def score_sql(qitem: dict) -> dict:
     expected_df = execute_on_mock_df(qitem["expected_sql"])
     expected_norm = normalize_sql(qitem["expected_sql"])
 
-    result = agent_module.ask(question)
+    try:
+        result = agent_module.ask(question)
+    except Exception as exc:  # noqa: BLE001 - one bad question must not abort the whole eval run
+        print(f"[eval {qitem['id']}] agent error: {type(exc).__name__}: {exc}")
+        return {
+            "valid": False, "shape_match": False, "value_match": False, "ast_match": False,
+            "agent_sql": "", "answer": f"AGENT ERROR: {exc}", "num_tool_calls": 0,
+            "agent_error": type(exc).__name__,
+        }
+
     answer = result.get("answer", "")
-    agent_sql = _sql_from_trace(result.get("trace", []))
+    trace = result.get("trace", [])
+    agent_sql = _sql_from_trace(trace)
     if not agent_sql and answer.strip().lower().startswith(("select", "with")):
         # lenient fallback: only if the answer IS raw SQL (no markdown wrapper)
         agent_sql = answer
+    if agent_sql:
+        # Apply the same normalization the agent's tool applies (smart quotes,
+        # double-quoted literals, ...) so we score the SQL that actually ran and
+        # the sqlglot guard can parse it.
+        agent_sql = _fix_common_sql_errors(agent_sql)
 
     metrics = {
         "valid": False, "shape_match": False, "value_match": False, "ast_match": False,
         "agent_sql": agent_sql or "", "answer": answer[:400],
-        "num_tool_calls": len([t for t in result.get("trace", []) if t.get("type") == "tool_call"]),
+        "num_tool_calls": len([t for t in trace if t.get("type") == "tool_call"]),
     }
     if not agent_sql:
         return metrics
 
     try:
         valid, _ = sanitize_sql(agent_sql)
-    except SQLGuardError as exc:
+    except Exception as exc:  # noqa: BLE001 - guard/parser errors score 0, never abort
         metrics["guard_rejects"] = 1
-        print(f"[eval {qitem['id']}] guard rejected: {exc}")
+        print(f"[eval {qitem['id']}] guard rejected: {type(exc).__name__}: {exc}")
         return metrics
     metrics["valid"] = True
     # exec-based score
@@ -116,7 +149,7 @@ def score_sql(qitem: dict) -> dict:
         agent_df = execute_on_mock_df(valid)
         metrics["shape_match"] = _result_signature(agent_df) == _result_signature(expected_df)
         metrics["value_match"] = _result_values(agent_df) == _result_values(expected_df)
-    except (RuntimeError, ValueError, TypeError, AttributeError):
+    except Exception:  # noqa: BLE001 - a bad query should score 0, not abort the run
         print(f"[eval {qitem['id']}] exec failure:\n{traceback.format_exc(limit=3)}")
     metrics["ast_match"] = normalize_sql(agent_sql) == expected_norm
     return metrics
@@ -162,7 +195,13 @@ def run_evals(limit: int = 0, skip_judge: bool = False, off_mlflow: bool = False
     for item in doc_items:
         s = score_doc(item)
         if not skip_judge:
-            s["faithfulness"] = faithfulness_score(item["question"], s["context_snippet"], agent_module.ask(item["question"])["answer"])
+            try:
+                doc_answer = agent_module.ask(item["question"])["answer"]
+            except Exception as exc:  # noqa: BLE001 - judging must not abort the run
+                doc_answer = f"AGENT ERROR: {exc}"
+            s["faithfulness"] = faithfulness_score(
+                item["question"], s["context_snippet"], doc_answer
+            )
         doc_scores.append({"id": item["id"], "question": item["question"], **s})
         print(f"  DOC {item['id']}: hit_rate={s['retrieval_hit_rate']:.2f}")
 

@@ -213,3 +213,137 @@ def test_expected_sql_passes_the_guard_itself():
     for item in data.get("sql_questions", []):
         hardened, _ = sanitize_sql(item["expected_sql"])
         assert hardened  # guard accepts the baseline queries
+# ----------------------------------------------------------------------
+# Agent Graph Resilience
+# ----------------------------------------------------------------------
+
+from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.graph import END, StateGraph
+
+from ai.agent.graph import AgentState, _coerce_text_tool_call
+
+
+class TestAgentGraphResilience:
+    """Regression tests for small-model failures seen in the Streamlit copilot."""
+
+    def test_messages_accumulate_across_nodes(self):
+        """Without a message reducer a node update replaces the conversation.
+
+        That bug made the model lose the user's question after a tool call and
+        answer with a few-shot example or "What's the user's question?".
+        """
+        def node(state: AgentState) -> dict:
+            return {"messages": [AIMessage(content="tool answer")]}
+
+        graph = StateGraph(AgentState)
+        graph.add_node("node", node)
+        graph.set_entry_point("node")
+        graph.add_edge("node", END)
+        out = graph.compile().invoke(
+            AgentState(messages=[HumanMessage(content="the question")])
+        )
+        assert [m.content for m in out["messages"]] == ["the question", "tool answer"]
+
+    def test_tool_call_printed_as_json_is_recovered(self):
+        msg = AIMessage(
+            content='{"name":"query_gold_layer","parameters":{"sql":"SELECT 1"}}'
+        )
+        out = _coerce_text_tool_call(msg)
+        assert out.tool_calls[0]["name"] == "query_gold_layer"
+        assert out.tool_calls[0]["args"] == {"sql": "SELECT 1"}
+
+    def test_empty_parameters_are_recovered(self):
+        msg = AIMessage(content='{"name":"get_cat_directory","parameters":{}}')
+        out = _coerce_text_tool_call(msg)
+        assert out.tool_calls[0]["name"] == "get_cat_directory"
+        assert out.tool_calls[0]["args"] == {}
+
+    def test_tool_call_with_unescaped_quotes_is_recovered(self):
+        msg = AIMessage(
+            content='{"name":"query_gold_layer","parameters":{"sql":'
+            '"SELECT cat_id FROM t WHERE weight_category = "obese" LIMIT 5"}}'
+        )
+        out = _coerce_text_tool_call(msg)
+        assert out.tool_calls[0]["name"] == "query_gold_layer"
+        assert "weight_category" in out.tool_calls[0]["args"]["sql"]
+
+    def test_plain_answer_is_left_alone(self):
+        msg = AIMessage(content="Simba is the oldest cat at 12 years.")
+        assert _coerce_text_tool_call(msg).tool_calls == []
+
+    def test_text_tool_call_with_parentheses_in_sql(self):
+        msg = AIMessage(
+            content='[TOOL CALL] query_gold_layer(sql="SELECT AVG(total_daily_steps) FROM t")'
+        )
+        out = _coerce_text_tool_call(msg)
+        assert out.tool_calls[0]["name"] == "query_gold_layer"
+        assert out.tool_calls[0]["args"]["sql"] == "SELECT AVG(total_daily_steps) FROM t"
+
+    def test_text_tool_call_without_args(self):
+        msg = AIMessage(content="[TOOL CALL] get_cat_directory()")
+        out = _coerce_text_tool_call(msg)
+        assert out.tool_calls[0]["name"] == "get_cat_directory"
+        assert out.tool_calls[0]["args"] == {}
+
+    def test_text_tool_call_keeps_nested_double_quotes(self):
+        msg = AIMessage(
+            content='[TOOL CALL] query_gold_layer(sql="SELECT 1 FROM t WHERE cat_name = "Gaia" ORDER BY reading_date DESC LIMIT 5")'
+        )
+        out = _coerce_text_tool_call(msg)
+        assert out.tool_calls[0]["args"]["sql"].endswith("LIMIT 5")
+        assert '"Gaia"' in out.tool_calls[0]["args"]["sql"]
+
+
+class TestSQLNormalization:
+    def test_dash_quotes_are_normalized(self):
+        from ai.agent.tools import _fix_common_sql_errors
+
+        sql = "SELECT 1 FROM t WHERE weight_category = \u2013overweight\u2013"
+        assert "'overweight'" in _fix_common_sql_errors(sql)
+
+
+# ----------------------------------------------------------------------
+# Eval Harness Scoring
+# ----------------------------------------------------------------------
+
+class TestEvalTraceParsing:
+    """The eval harness must read SQL from the trace the agent actually emits."""
+
+    def test_reads_current_tool_call_shape(self):
+        from ai.evals.run_evals import _sql_from_trace
+
+        trace = [{
+            "type": "tool_call",
+            "content": "Calling query_gold_layer",
+            "tool_calls": [{
+                "name": "query_gold_layer",
+                "args": {"sql": "SELECT 1"},
+                "id": "call_1",
+            }],
+        }]
+        assert _sql_from_trace(trace) == "SELECT 1"
+
+    def test_reads_legacy_tool_call_shape(self):
+        from ai.evals.run_evals import _sql_from_trace
+
+        trace = [{"type": "tool_call", "args": {"query_gold_layer": {"sql": "SELECT 2"}}}]
+        assert _sql_from_trace(trace) == "SELECT 2"
+
+    def test_takes_the_last_query(self):
+        from ai.evals.run_evals import _sql_from_trace
+
+        trace = [
+            {"type": "tool_call", "tool_calls": [
+                {"name": "query_gold_layer", "args": {"sql": "SELECT 1"}, "id": "a"}
+            ]},
+            {"type": "tool_result", "content": "..."},
+            {"type": "tool_call", "tool_calls": [
+                {"name": "query_gold_layer", "args": {"sql": "SELECT 3"}, "id": "b"}
+            ]},
+        ]
+        assert _sql_from_trace(trace) == "SELECT 3"
+
+    def test_no_query_returns_none(self):
+        from ai.evals.run_evals import _sql_from_trace
+
+        assert _sql_from_trace([{"type": "tool_result", "content": "rows"}]) is None

@@ -25,6 +25,10 @@ class Config:
     chat_model: str = os.getenv("AI_CHAT_MODEL", "llama3.2:3b")
     embed_model: str = os.getenv("AI_EMBED_MODEL", "nomic-embed-text")
     temperature: float = float(os.getenv("AI_TEMPERATURE", "0"))
+    # Ollama defaults to a 2048-token window, which silently truncates the system
+    # prompt (schema + rules + few-shot examples) and makes small models hallucinate
+    # column names. 8192 comfortably fits the prompt plus tool schemas/observations.
+    num_ctx: int = int(os.getenv("AI_NUM_CTX", "8192"))
 
     # --- Snowflake (read-only consumer; empty envs => mock mode) ---
     sf_user: str = os.getenv("SF_USER", "")

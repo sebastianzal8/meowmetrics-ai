@@ -8,10 +8,12 @@ This replaces the prebuilt `create_react_agent` with an explicit graph:
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 import uuid
-from datetime import UTC, datetime
-from typing import Any, Literal
+from datetime import datetime, timezone
+from typing import Annotated, Any, Literal
 
 from langchain_core.messages import (
     AIMessage,
@@ -22,6 +24,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
+from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 
@@ -29,6 +32,11 @@ from ai.agent.llm import get_llm
 from ai.agent.models import AgentResponse, AgentStep, ToolCall, ToolResult
 from ai.agent.prompts import SYSTEM_PROMPT
 from ai.agent.tools import ALL_TOOLS, extract_sources
+
+# Small local models sometimes loop on tool calls (usually after a malformed
+# query they never repair). Cap the rounds so the graph always terminates with
+# an answer instead of hitting LangGraph's recursion limit.
+MAX_TOOL_ROUNDS = 6
 
 # Try to import Langfuse; make it optional
 try:
@@ -43,7 +51,10 @@ except ImportError:
 
 class AgentState(BaseModel):
     """State for the ReAct agent graph."""
-    messages: list[BaseMessage] = Field(default_factory=list)
+    # `add_messages` is required: without a reducer every node update would
+    # replace the conversation, so the model would lose the user's question and
+    # the prior tool results after the first tool round-trip.
+    messages: Annotated[list[BaseMessage], add_messages] = Field(default_factory=list)
     steps: list[AgentStep] = Field(default_factory=list)
     sql_used: list[str] = Field(default_factory=list)
     trace_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -76,6 +87,78 @@ def _get_langfuse_handler() -> Any | None:
         return None
 
 
+_TEXT_TOOL_CALL_RE = re.compile(
+    r'\[TOOL CALL\]\s*(\w+)\s*\(\s*(?:(\w+)\s*=\s*["\'](.*)["\']\s*)?\)\s*$',
+    re.MULTILINE | re.DOTALL,
+)
+_TOOL_NAMES = {tool.name for tool in ALL_TOOLS}
+
+
+def _coerce_text_tool_call(message: AIMessage) -> AIMessage:
+    """Recover a tool call that a small model printed as text instead of calling.
+
+    llama3.2:3b sometimes answers with ``{"name": "query_gold_layer",
+    "parameters": {...}}`` (or the few-shot ``[TOOL CALL] name(...)`` syntax) as
+    the *content* of its reply. Without this the graph sees no ``tool_calls``,
+    treats the text as the final answer, and the user gets raw JSON.
+    """
+    if getattr(message, "tool_calls", None) or not message.content:
+        return message
+
+    raw = message.content if isinstance(message.content, str) else str(message.content)
+
+    # 1) JSON object, optionally wrapped in a ```json fence.
+    candidate = raw.strip()
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*|\s*```$", "", candidate, flags=re.IGNORECASE).strip()
+
+    name: str | None = None
+    args: dict[str, Any] | None = None
+    try:
+        payload = json.loads(candidate)
+    except (ValueError, TypeError):
+        payload = None
+    if isinstance(payload, dict) and isinstance(payload.get("name"), str):
+        name = payload["name"]
+        args = payload.get("parameters")
+        if not isinstance(args, dict):
+            args = payload.get("arguments")
+
+    # 2) Tolerant fallback for JSON the model broke with unescaped inner quotes
+    #    (e.g. SQL containing "overweight" as a string literal).
+    if name is None:
+        name_match = re.search(r'"name"\s*:\s*"([A-Za-z_]\w*)"', raw)
+        args_blob = re.search(r'"(?:parameters|arguments)"\s*:\s*\{(.*)', raw, re.DOTALL)
+        if name_match and args_blob:
+            name = name_match.group(1)
+            inner = args_blob.group(1)
+            kv = re.search(r'"(\w+)"\s*:\s*"(.*)"\s*\}*\s*$', inner, re.DOTALL)
+            if kv:
+                args = {kv.group(1): kv.group(2)}
+            elif inner.strip().startswith("}"):
+                args = {}
+
+    # 3) Few-shot style: [TOOL CALL] tool_name(key="value") or tool_name()
+    if name is None:
+        match = _TEXT_TOOL_CALL_RE.search(raw)
+        if match:
+            name = match.group(1)
+            if match.group(2):
+                # The value may contain parentheses (e.g. AVG(...)), hence the
+                # greedy capture up to the closing quote + parenthesis.
+                args = {match.group(2): match.group(3)}
+            else:
+                args = {}
+
+    if not name or name not in _TOOL_NAMES or not isinstance(args, dict):
+        return message
+
+    return AIMessage(
+        content="",
+        tool_calls=[{"name": name, "args": args, "id": f"call_{uuid.uuid4().hex[:8]}"}],
+    )
+
+
 def build_agent_graph() -> StateGraph:
     """Build the explicit ReAct agent StateGraph."""
     
@@ -83,13 +166,18 @@ def build_agent_graph() -> StateGraph:
     llm = get_llm()
     llm_with_tools = llm.bind_tools(ALL_TOOLS)
     
-    # Tool node for executing tool calls
-    tool_node = ToolNode(ALL_TOOLS)
+    # Tool node for executing tool calls. `handle_tool_errors=True` is a last-resort
+    # backstop: any unexpected tool exception becomes a ToolMessage instead of
+    # propagating out of the graph and killing the Streamlit process.
+    tool_node = ToolNode(ALL_TOOLS, handle_tool_errors=True)
     
     def should_continue(state: AgentState) -> Literal["tools", "end"]:
         """Decide whether to call tools or finish."""
         last_message = state.messages[-1]
         if isinstance(last_message, AIMessage) and last_message.tool_calls:
+            tool_rounds = sum(1 for m in state.messages if isinstance(m, ToolMessage))
+            if tool_rounds >= MAX_TOOL_ROUNDS:
+                return "end"
             return "tools"
         return "end"
     
@@ -111,7 +199,9 @@ def build_agent_graph() -> StateGraph:
             messages,
             config=RunnableConfig(callbacks=callbacks, metadata=config.get("metadata", {}))
         )
-        
+        # Recover tool calls that the model printed as text instead of calling.
+        response = _coerce_text_tool_call(response)
+
         return {"messages": [response]}
     
     def call_tools(state: AgentState) -> dict:
@@ -123,6 +213,7 @@ def build_agent_graph() -> StateGraph:
         
         # Record tool calls in steps
         new_steps = []
+        sql_used = list(state.sql_used)
         for tc in last_message.tool_calls:
             step = AgentStep(
                 type="tool_call",
@@ -130,10 +221,11 @@ def build_agent_graph() -> StateGraph:
                 tool_calls=[ToolCall(name=tc['name'], args=tc['args'], id=tc['id'])]
             )
             new_steps.append(step)
-            
-            # Track SQL used
+
+            # Track SQL used (returned as a state update; mutating state in
+            # place is not persisted by LangGraph).
             if tc['name'] == 'query_gold_layer' and 'sql' in tc['args']:
-                state.sql_used.append(tc['args']['sql'])
+                sql_used.append(tc['args']['sql'])
         
         # Execute tools
         tool_messages = tool_node.invoke({"messages": state.messages})
@@ -154,7 +246,8 @@ def build_agent_graph() -> StateGraph:
         
         return {
             "messages": tool_messages.get("messages", []),
-            "steps": state.steps + new_steps
+            "steps": state.steps + new_steps,
+            "sql_used": sql_used,
         }
     
     def format_final_response(state: AgentState) -> dict:
@@ -188,7 +281,18 @@ def build_agent_graph() -> StateGraph:
                         b.get("text", "") for b in content if isinstance(b, dict)
                     )
                 break
-        
+
+        # If we stopped a looping agent at the tool-round cap, there is no plain
+        # AI answer. Fall back to the last observation so the user still gets data.
+        if not answer:
+            for msg in reversed(state.messages):
+                if isinstance(msg, ToolMessage) and msg.content:
+                    answer = (
+                        "I stopped after several tool calls without a final summary.\n\n"
+                        "Last tool result:\n\n" + str(msg.content)[:1200]
+                    )
+                    break
+
         # If explain_metric was called but the model's answer doesn't include its content,
         # use the explain_metric result as the primary answer
         if explain_metric_result and explain_metric_result not in answer:
@@ -213,7 +317,7 @@ def build_agent_graph() -> StateGraph:
             metadata={
                 "model": getattr(get_llm(), "model", "unknown"),
                 "trace_id": state.trace_id,
-                "timestamp": datetime.now(UTC).isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),  # noqa: UP017
             }
         )
         
