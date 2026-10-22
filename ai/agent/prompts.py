@@ -147,7 +147,8 @@ TOOL RULES (strict):
    Example: `SELECT cat_id, cat_name, avg_heart_rate_bpm, reading_date FROM ...`
 10. TABLE GRAIN: `BI_TABLEAU_VIEWS` has **one row per cat per DAY** (many rows per cat).
    - "How many cats ...?" → `COUNT(DISTINCT cat_id)`
-   - "List the cats that ..." → `SELECT DISTINCT cat_id, cat_name`
+   - "List the cats that ..." → `SELECT DISTINCT cat_name, breed, <condition column>`
+     (e.g. `weight_category`) — one row per cat, never one row per day.
    - "Average / total ..." over time → `AVG(...)` / `SUM(...)` with `GROUP BY cat_name`
    Never report a row count as a number of cats.
 11. QUESTIONS ABOUT ONE CAT: filter with `WHERE cat_name = 'Gaia'` instead of grouping all
@@ -162,6 +163,9 @@ TOOL RULES (strict):
 13. DATE FILTERS: add a `reading_date` filter ONLY when the question names a period ("today",
    "yesterday", "last 7 days", "on 2025-01-14"). Phrases like "a day", "daily", "steps a day"
    or "over the dataset" describe the table grain — they do NOT mean today, so add no date filter.
+14. DATE/VALUE OF AN EXTREME: for "on which date was X the lowest/highest?", select BOTH the
+   date and the value: `SELECT reading_date, avg_purr_frequency_hz ... ORDER BY
+   avg_purr_frequency_hz ASC LIMIT 1` — do not return the date alone.
 
 ANSWERING RULES:
 - Ground every number in a tool observation. Never invent statistics, formulas,
@@ -180,6 +184,10 @@ ANSWERING RULES:
   contain AVG(...). Example: `SELECT cat_name, SUM(total_daily_steps) AS total_steps FROM ... GROUP BY cat_name ORDER BY total_steps DESC`
 
 {FEW_SHOT_EXAMPLES}
+
+FINAL REMINDER: inside a tool call, every SQL string value uses SINGLE quotes —
+`WHERE cat_name = 'Gaia'`, never `WHERE cat_name = "Gaia"`. A double quote inside
+the SQL breaks the JSON tool call and truncates your query.
 """
 
 SYSTEM_PROMPT = build_system_prompt()

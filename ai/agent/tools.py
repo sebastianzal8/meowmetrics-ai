@@ -179,9 +179,23 @@ def query_gold_layer(sql: str) -> str:
     BI_TABLEAU_VIEWS (denormalized daily per-cat telemetry + health score).
     You may write the table name qualified (MEOW_DB.ANALYTICS.BI_TABLEAU_VIEWS) or bare."""
     try:
+        stripped = sql.rstrip().rstrip(";").rstrip()
+        if re.search(r"(?:=|<>|!=|>=|<=|>|<|\bLIKE|\bIN\s*\()\s*$", stripped, re.IGNORECASE):
+            return _note_failure(
+                sql,
+                "SQL EXECUTION ERROR: the query is truncated after an operator — a value is missing.\n"
+                "Hint: SQL string values use SINGLE quotes: cat_name = 'Gaia'. Never put "
+                "double quotes inside the SQL string in a tool call.\nFix the SQL and retry.",
+            )
         rows = _execute_select(sql)
         _LAST_FAILURES.pop(write_sql_key(sql), None)
-        return _rows_to_markdown(rows)
+        markdown = _rows_to_markdown(rows)
+        if not rows:
+            markdown += (
+                "\n\nHint: no rows matched. If the question did not mention a date, "
+                "remove any reading_date filter and retry."
+            )
+        return markdown
     except SQLGuardError as exc:
         return _note_failure(
             sql,

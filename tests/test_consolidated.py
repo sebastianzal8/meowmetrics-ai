@@ -293,6 +293,57 @@ class TestAgentGraphResilience:
         assert out.tool_calls[0]["args"]["sql"].endswith("LIMIT 5")
         assert '"Gaia"' in out.tool_calls[0]["args"]["sql"]
 
+    def test_truncated_sql_gets_a_quoting_hint(self):
+        from ai.agent.tools import _reset_failures, query_gold_layer
+
+        _reset_failures()
+        out = query_gold_layer.invoke({"sql": "SELECT 1 FROM t WHERE cat_name ="})
+        assert "truncated" in out
+        assert "SINGLE quotes" in out
+
+    def test_all_failed_queries_are_detected(self):
+        from ai.agent.graph import _grounded_data_failure
+        from ai.agent.models import AgentStep, ToolResult
+
+        steps = [
+            AgentStep(
+                type="tool_result",
+                content="",
+                tool_result=ToolResult(
+                    tool="query_gold_layer",
+                    content="SQL EXECUTION ERROR: boom",
+                    tool_call_id="1",
+                ),
+            ),
+            AgentStep(
+                type="tool_result",
+                content="",
+                tool_result=ToolResult(
+                    tool="query_gold_layer",
+                    content="IDENTICAL QUERY ALREADY FAILED TWICE.",
+                    tool_call_id="2",
+                ),
+            ),
+        ]
+        assert _grounded_data_failure(steps) == "IDENTICAL QUERY ALREADY FAILED TWICE."
+
+    def test_successful_query_is_not_a_failure(self):
+        from ai.agent.graph import _grounded_data_failure
+        from ai.agent.models import AgentStep, ToolResult
+
+        steps = [
+            AgentStep(
+                type="tool_result",
+                content="",
+                tool_result=ToolResult(
+                    tool="query_gold_layer",
+                    content="cat_name | total\n---\nGaia | 100",
+                    tool_call_id="1",
+                ),
+            ),
+        ]
+        assert _grounded_data_failure(steps) is None
+
 
 class TestSQLNormalization:
     def test_dash_quotes_are_normalized(self):

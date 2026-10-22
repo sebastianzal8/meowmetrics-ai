@@ -159,6 +159,32 @@ def _coerce_text_tool_call(message: AIMessage) -> AIMessage:
     )
 
 
+def _is_failed_observation(content: str) -> bool:
+    """True when a tool observation is an error/stop message, not data."""
+    return content.lstrip().startswith(
+        ("SQL EXECUTION ERROR", "SQL REJECTED", "IDENTICAL QUERY", "TOOL ERROR")
+    )
+
+
+def _grounded_data_failure(steps: list[AgentStep]) -> str | None:
+    """Return the last error when every data observation failed.
+
+    A small model can answer a failed query with a plausible-looking table
+    invented from the examples. If no query succeeded, there are no grounded
+    rows, so the caller must not present numbers.
+    """
+    contents = [
+        step.tool_result.content
+        for step in steps
+        if step.type == "tool_result"
+        and step.tool_result
+        and step.tool_result.tool in ("query_gold_layer", "get_cat_directory")
+    ]
+    if contents and all(_is_failed_observation(c) for c in contents):
+        return contents[-1]
+    return None
+
+
 def build_agent_graph() -> StateGraph:
     """Build the explicit ReAct agent StateGraph."""
     
@@ -302,6 +328,16 @@ def build_agent_graph() -> StateGraph:
             else:
                 answer = explain_metric_result
         
+        # If every data query failed, the model has no rows to ground an answer
+        # in. Refuse instead of letting it invent a table.
+        failed_observation = _grounded_data_failure(state.steps)
+        if failed_observation and not explain_metric_result:
+            answer = (
+                "I couldn't answer that from the available data: the SQL query "
+                "failed and a retry failed the same way, so I have no rows to "
+                "report.\n\nLast tool error:\n\n" + failed_observation[:600]
+            )
+
         # Extract sources from tool results
         sources = extract_sources([
             step.tool_result.content for step in state.steps 
