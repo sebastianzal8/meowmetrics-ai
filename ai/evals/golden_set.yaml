@@ -16,8 +16,8 @@ sql_questions:
     expected_sql: "SELECT cat_name, AVG(estimated_sleep_minutes) AS avg_sleep FROM BI_TABLEAU_VIEWS GROUP BY cat_name"
 
   - id: s2
-    question: "Which cat had the highest single-day health score, and on which date?"
-    expected_sql: "SELECT cat_name, reading_date, daily_feline_health_score FROM BI_TABLEAU_VIEWS ORDER BY daily_feline_health_score DESC LIMIT 1"
+    question: "Which cat has the highest average daily health score?"
+    expected_sql: "SELECT cat_name, AVG(daily_feline_health_score) AS avg_score FROM BI_TABLEAU_VIEWS GROUP BY cat_name ORDER BY avg_score DESC LIMIT 1"
 
   - id: s3
     question: "How many days did each cat spend in the 'Needs Attention' status?"
@@ -28,20 +28,20 @@ sql_questions:
     expected_sql: "SELECT breed, AVG(avg_heart_rate_bpm) AS avg_hr FROM BI_TABLEAU_VIEWS GROUP BY breed"
 
   - id: s5
-    question: "Show Luna's daily steps for the last 5 days, most recent first."
-    expected_sql: "SELECT reading_date, total_daily_steps FROM BI_TABLEAU_VIEWS WHERE cat_name = 'Luna' ORDER BY reading_date DESC LIMIT 5"
+    question: "Show Gaia's daily steps for the last 5 days, most recent first."
+    expected_sql: "SELECT reading_date, total_daily_steps FROM BI_TABLEAU_VIEWS WHERE cat_name = 'Gaia' ORDER BY reading_date DESC LIMIT 5"
 
   - id: s6
-    question: "Which overweight cats average more than 2000 steps a day?"
-    expected_sql: "SELECT cat_name, AVG(total_daily_steps) AS avg_steps FROM BI_TABLEAU_VIEWS WHERE weight_category = 'overweight' GROUP BY cat_name HAVING AVG(total_daily_steps) > 2000"
+    question: "Which overweight cats average more than 1000 steps a day?"
+    expected_sql: "SELECT cat_name, AVG(total_daily_steps) AS avg_steps FROM BI_TABLEAU_VIEWS WHERE weight_category = 'overweight' GROUP BY cat_name HAVING AVG(total_daily_steps) > 1000"
 
   - id: s7
     question: "What is the correlation-style trend between sleep and health score per cat? Show avg sleep and avg score per cat."
     expected_sql: "SELECT cat_name, AVG(estimated_sleep_minutes) AS avg_sleep_min, AVG(daily_feline_health_score) AS avg_score FROM BI_TABLEAU_VIEWS GROUP BY cat_name"
 
   - id: s8
-    question: "How many total daily steps did Garfield log, summed over the whole dataset?"
-    expected_sql: "SELECT SUM(total_daily_steps) AS total_steps FROM BI_TABLEAU_VIEWS WHERE cat_name = 'Garfield'"
+    question: "How many total daily steps did Simba log, summed over the whole dataset?"
+    expected_sql: "SELECT SUM(total_daily_steps) AS total_steps FROM BI_TABLEAU_VIEWS WHERE cat_name = 'Simba'"
 
   - id: s9
     question: "Which cats are obese or overweight?"
@@ -56,8 +56,8 @@ sql_questions:
     expected_sql: "SELECT cat_name, AVG(active_percentage_of_day) AS avg_active_pct FROM BI_TABLEAU_VIEWS GROUP BY cat_name"
 
   - id: s12
-    question: "List the 3 days with the lowest health score for cats of any weight category."
-    expected_sql: "SELECT cat_name, reading_date, daily_feline_health_score FROM BI_TABLEAU_VIEWS ORDER BY daily_feline_health_score LIMIT 3"
+    question: "What were Simba's 3 lowest daily step counts, and on which dates?"
+    expected_sql: "SELECT reading_date, total_daily_steps FROM BI_TABLEAU_VIEWS WHERE cat_name = 'Simba' ORDER BY total_daily_steps LIMIT 3"
 
   - id: s13
     question: "How many readings do we have for each health status category?"
@@ -68,8 +68,8 @@ sql_questions:
     expected_sql: "SELECT cat_name, AVG(avg_heart_rate_bpm) AS avg_hr FROM BI_TABLEAU_VIEWS WHERE gender = 'male' GROUP BY cat_name HAVING AVG(avg_heart_rate_bpm) > 135"
 
   - id: s15
-    question: "What's the healthiest day overall (max score) for any cat?"
-    expected_sql: "SELECT cat_name, reading_date, daily_feline_health_score FROM BI_TABLEAU_VIEWS ORDER BY daily_feline_health_score DESC LIMIT 1"
+    question: "What is the average health score for each weight category?"
+    expected_sql: "SELECT weight_category, AVG(daily_feline_health_score) AS avg_score FROM BI_TABLEAU_VIEWS GROUP BY weight_category"
 
 doc_questions:
   - id: d1

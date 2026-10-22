@@ -60,17 +60,27 @@ The embedded copilot (🤖 **Ask the Pipeline** panel in the Streamlit dashboard
 | Component | Technology | Role |
 |-----------|------------|------|
 | **LLM** | Ollama (`llama3.2:3b`, `llama3.1:8b`, `qwen2.5:7b`, `qwen2.5-coder:7b`) | Generates SQL, reasons over results, answers doc questions |
-| **Agent Framework** | LangGraph (ReAct pattern) | Plans → calls tools → observes → answers |
+| **Agent Framework** | LangGraph explicit `StateGraph` (ReAct loop) | Plans → calls tools → observes → answers; tool errors come back as observations so the agent can self-correct |
 | **SQL Tool** | `query_gold_layer` (read-only) | Executes `SELECT` against `BI_TABLEAU_VIEWS` (Snowflake or DuckDB mock) |
 | **Doc Tool** | `search_project_docs` (ChromaDB + `nomic-embed-text`) | Semantic search over README, dbt models, DAGs, Snowflake DDL, Databricks notebooks |
-| **Cat Directory** | `get_cat_directory` | Resolves cat names → IDs before SQL |
+| **Cat Directory** | `get_cat_directory` | Resolves cat names → IDs (identity fields only, no analytics answers) |
+| **Metric Tool** | `explain_metric` | Returns the exact formula/thresholds for a named health metric (no SQL needed) |
+| **Structured Output** | Pydantic `AgentResponse` | `answer`, `sql_used`, `sources`, `trace`, `metadata` — consumed by the UI and the eval harness |
+| **Tracing** | Langfuse (optional) | Enabled only when `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` are set |
 | **SQL Guardrails** | `ai/data_access/sql_guard.py` | **Read-only enforcement** (rejects DML/DDL), allowlisted table (`BI_TABLEAU_VIEWS` only), auto-`LIMIT`, column allowlist, injection-safe via sqlglot parsing |
 | **Experiment Tracking** | MLflow (local SQLite) | Logs eval runs, per-question metrics, artifact tables |
 
 **Routing logic**: The system prompt instructs the agent to:
 1. **Data questions** → `query_gold_layer` (always SQL first, never guess)
 2. **System/architecture questions** → `search_project_docs`
-3. **Hybrid** → both, then cite sources
+3. **Metric definitions** ("how is X calculated?") → `explain_metric`
+4. **Hybrid** → both data and docs, then cite sources
+
+Small local models need guardrails, so the agent also:
+- uses the **exact Gold-layer column names** (e.g. `avg_heart_rate_bpm`, not `average_heart_rate_bpm`);
+- gets the valid column list back when a query fails, and retries with corrected SQL;
+- treats the table grain as **one row per cat per day** (`COUNT(DISTINCT cat_id)` for cat counts);
+- recovers tool calls that a model prints as JSON text instead of invoking natively.
 
 The agent is invoked in-process from the Streamlit app (no separate service). The model selector in the UI swaps the Ollama model and rebuilds the agent on the fly.
 
@@ -143,6 +153,17 @@ pip install -r dashboard/requirements.txt && pip install -r ai/requirements.txt
 streamlit run dashboard/app.py
 ```
 Open http://localhost:8501 — the **AI Copilot panel** is embedded in the dashboard (no separate process).
+
+Optional AI environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `AI_CHAT_MODEL` | `llama3.2:3b` | Ollama model used by the copilot (overridable in the UI) |
+| `AI_TEMPERATURE` | `0` | Sampling temperature |
+| `AI_NUM_CTX` | `8192` | Ollama context window; prevents silent truncation of the schema + rules prompt |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama endpoint |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | unset | Enable Langfuse tracing when both are present |
+| `LANGFUSE_HOST` | `https://cloud.langfuse.com` | Langfuse host (self-hosted or cloud) |
 
 ---
 

@@ -40,6 +40,17 @@ def sanitize_sql(raw_sql: str, max_rows: int = DEFAULT_MAX_LIMIT) -> tuple[str, 
     sql = FENCE_RE.sub("", raw_sql.strip()).strip()
     sql = sql.strip("` \n\r\t")
 
+    # Fix various special characters that LLMs may generate
+    sql = (sql
+        .replace('\u2018', "'")   # left single quotation mark
+        .replace('\u2019', "'")   # right single quotation mark
+        .replace('\u201c', '"')   # left double quotation mark
+        .replace('\u201d', '"')   # right double quotation mark
+        .replace('\u2013', '-')   # en dash
+        .replace('\u2014', '-')   # em dash
+        .replace('\u2026', '...') # horizontal ellipsis
+    )
+
     # Whole-word pre-filter — cheap tripwire before the grammar check.
     if _FORBIDDEN.search(sql):
         raise SQLGuardError("Query contains forbidden write/admin keywords.")
